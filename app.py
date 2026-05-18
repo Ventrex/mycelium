@@ -1,16 +1,44 @@
 import logging
 import threading
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, abort, jsonify, request
 
+import jellyfin
 import processor
-from config import LISTEN_HOST, LISTEN_PORT, WEBHOOK_SECRET, configure_logging
+from config import (
+    LISTEN_HOST,
+    LISTEN_PORT,
+    MERGE_VERSIONS_INTERVAL_HOURS,
+    WEBHOOK_SECRET,
+    configure_logging,
+)
 from webhook_parser import IgnoreEvent, WebhookError, parse
 
 configure_logging()
 log = logging.getLogger("seerr-torbox")
 
 app = Flask(__name__)
+
+
+def _start_scheduler() -> BackgroundScheduler | None:
+    if MERGE_VERSIONS_INTERVAL_HOURS <= 0:
+        log.info("MergeVersions scheduler disabled (interval=%d)", MERGE_VERSIONS_INTERVAL_HOURS)
+        return None
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        jellyfin.merge_duplicate_versions,
+        trigger="interval",
+        hours=MERGE_VERSIONS_INTERVAL_HOURS,
+        id="merge_versions",
+        next_run_time=None,
+    )
+    scheduler.start()
+    log.info("Scheduled Jellyfin MergeVersions every %d hours", MERGE_VERSIONS_INTERVAL_HOURS)
+    return scheduler
+
+
+scheduler = _start_scheduler()
 
 
 def _check_auth() -> None:

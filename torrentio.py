@@ -4,7 +4,15 @@ from dataclasses import dataclass
 
 import requests
 
-from config import ALLOW_4K, EXCLUDE_REMUX, QUALITY_PREFERENCE, TORRENTIO_BASE_URL, TORRENTIO_OPTS
+from config import (
+    ALLOW_4K,
+    EXCLUDE_CAM,
+    EXCLUDE_REMUX,
+    PREFER_WEBDL,
+    QUALITY_PREFERENCE,
+    TORRENTIO_BASE_URL,
+    TORRENTIO_OPTS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +24,8 @@ _QUALITY_PATTERNS = {
 }
 
 _REMUX_RE = re.compile(r"\b(remux|bluray|blu-ray|bdremux)\b", re.IGNORECASE)
+_CAM_RE = re.compile(r"\b(cam|camrip|hdcam|ts|telesync|hdts|scr|screener|dvdscr|workprint|r5)\b", re.IGNORECASE)
+_WEBDL_RE = re.compile(r"\b(web-?dl|webrip|web)\b", re.IGNORECASE)
 _SEEDERS_RE = re.compile(r"👤\s*(\d+)")
 _SIZE_RE = re.compile(r"💾\s*([\d.]+)\s*(GB|MB)", re.IGNORECASE)
 _SEASON_PACK_HINTS = ("season", "complete", "s%02d ", "s%02d.")
@@ -142,10 +152,19 @@ def pick_best(
         else:
             log.warning("Only remux/bluray candidates available; allowing them")
 
+    if EXCLUDE_CAM:
+        filtered = [s for s in candidates if not _CAM_RE.search(f"{s.name} {s.title}")]
+        if filtered:
+            candidates = filtered
+        else:
+            log.warning("Only cam/telesync candidates available; allowing them")
+
     def sort_key(s: TorrentioStream):
+        is_webdl = bool(_WEBDL_RE.search(f"{s.name} {s.title}"))
         return (
             0 if prefer_season_pack and s.is_season_pack else 1,
             _quality_rank(s),
+            0 if PREFER_WEBDL and is_webdl else 1,
             -s.seeders,
             s.size_gb,
         )

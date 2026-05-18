@@ -36,12 +36,17 @@ LISTEN_PORT = _env_int("LISTEN_PORT", 8088)
 QUALITY_PREFERENCE = [q.strip() for q in _env("QUALITY_PREFERENCE", "1080p,720p").split(",") if q.strip()]
 ALLOW_4K = _env("ALLOW_4K", "false").lower() in ("1", "true", "yes")
 EXCLUDE_REMUX = _env("EXCLUDE_REMUX", "true").lower() in ("1", "true", "yes")
+EXCLUDE_CAM = _env("EXCLUDE_CAM", "true").lower() in ("1", "true", "yes")
+PREFER_WEBDL = _env("PREFER_WEBDL", "true").lower() in ("1", "true", "yes")
 
 # How long to wait for Torbox to make the torrent available before triggering Jellyfin scan.
 TORBOX_POLL_INTERVAL_SEC = _env_int("TORBOX_POLL_INTERVAL_SEC", 10)
 TORBOX_POLL_TIMEOUT_SEC = _env_int("TORBOX_POLL_TIMEOUT_SEC", 600)
 
 WEBHOOK_SECRET = _env("WEBHOOK_SECRET", "")
+
+# Automatic Jellyfin merge of duplicate movie versions (every N hours; 0 disables).
+MERGE_VERSIONS_INTERVAL_HOURS = _env_int("MERGE_VERSIONS_INTERVAL_HOURS", 6)
 
 LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 
