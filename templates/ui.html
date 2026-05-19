@@ -294,6 +294,24 @@
       </div>
     </div>
 
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Integration Endpoints</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px">
+        <div>
+          <div class="dim" style="margin-bottom:2px">Seerr webhook URL (already configured)</div>
+          <code id="seerr-url" style="display:block;background:var(--panel2);padding:6px 10px;border-radius:4px"></code>
+        </div>
+        <div>
+          <div class="dim" style="margin-bottom:2px">TorBox push notification URL — configure in TorBox settings to skip polling</div>
+          <code id="torbox-url" style="display:block;background:var(--panel2);padding:6px 10px;border-radius:4px"></code>
+        </div>
+        <div>
+          <div class="dim" style="margin-bottom:2px">Catbox stream prefix (.strm files contain proxy URLs starting with this)</div>
+          <code id="catbox-url" style="display:block;background:var(--panel2);padding:6px 10px;border-radius:4px"></code>
+        </div>
+      </div>
+    </div>
+
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Recent Activity</div>
@@ -904,6 +922,15 @@
       }
     } catch(e) {}
   }
+
+  // ── Integration URLs ──
+  function populateEndpointUrls() {
+    const origin = location.origin;
+    document.getElementById('seerr-url').textContent = origin + '/webhook';
+    document.getElementById('torbox-url').textContent = origin + '/torbox-webhook';
+    document.getElementById('catbox-url').textContent = origin + '/stream/<token>';
+  }
+  populateEndpointUrls();
 
   // ── Overrides ──
   async function refreshOverrides() {

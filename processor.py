@@ -84,7 +84,12 @@ def _add_best_from(candidates: list, label: str) -> tuple[bool, Optional[Torrent
     if not candidates:
         log.warning("All candidates for %s are blacklisted", label)
         return False, None
-    cached_hashes = torbox.check_cached([s.info_hash for s in candidates])
+    import debrid
+    multi = debrid.check_cached_multi([s.info_hash for s in candidates])
+    cached_hashes = multi.get("torbox", set())
+    rd_only = (multi.get("realdebrid", set()) or set()) - cached_hashes
+    if rd_only:
+        log.info("Multi-debrid: %d candidate(s) cached on RealDebrid but not TorBox (informational)", len(rd_only))
 
     cached = [s for s in candidates if s.info_hash in cached_hashes]
     uncached = [s for s in candidates if s.info_hash not in cached_hashes]

@@ -142,6 +142,11 @@ QUOTA_WARN_TORRENT_COUNT = _env_int("QUOTA_WARN_TORRENT_COUNT", 200)
 QUOTA_WARN_SIZE_GB = _env_int("QUOTA_WARN_SIZE_GB", 4000)
 QUOTA_CHECK_INTERVAL_HOURS = _env_int("QUOTA_CHECK_INTERVAL_HOURS", 1)
 
+# ── Multi-debrid (RealDebrid fallback) ────────────────────────────────────────
+MULTI_DEBRID_ENABLED = _env("MULTI_DEBRID_ENABLED", "false").lower() in ("1", "true", "yes")
+REALDEBRID_API_KEY = _env("REALDEBRID_API_KEY", "")
+REALDEBRID_BASE_URL = _env("REALDEBRID_BASE_URL", "https://api.real-debrid.com/rest/1.0")
+
 
 def configure_logging() -> None:
     logging.basicConfig(
