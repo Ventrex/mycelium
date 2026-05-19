@@ -95,25 +95,69 @@ def import_existing() -> dict:
     return {"scanned": len(files), "imported": imported}
 
 
+def _clean_series_title(raw: str) -> str:
+    """Clean a series folder name for display: strip torrent prefixes, year suffix, season markers."""
+    s = _clean_title(raw)
+    s = _SEASON_TRAIL_RE.sub("", s).strip()
+    s = _YEAR_TRAIL_RE.sub("", s).strip()
+    return s or raw
+
+
+def _imdb_from_strm_files(series_dir: Path) -> str | None:
+    """Scan .strm files inside a series folder and return the first tt-ID found."""
+    for strm in series_dir.rglob("*.strm"):
+        try:
+            url = strm.read_text(encoding="utf-8").strip()
+            m = re.search(r"tt\d{6,10}", url)
+            if m:
+                return m.group(0)
+        except Exception:
+            pass
+    return None
+
+
 def import_series_to_monitored() -> int:
-    """Walk media/series/ and register any missing series in monitored_series."""
+    """Walk media/series/ and register any missing series in monitored_series.
+
+    Falls back to scanning .strm URLs for IMDb IDs when the folder name is not
+    in media_items (e.g. messy torrent-site prefixed folder names).
+    Also cleans up messy titles on existing monitored_series rows.
+    """
     base = Path(MEDIA_PATH) / "series"
     if not base.is_dir():
         return 0
 
-    existing = {s["imdb_id"] for s in db.get_all_monitored_series()}
+    existing_rows = {s["imdb_id"]: s for s in db.get_all_monitored_series()}
     series_items = {m["title"]: m for m in db.get_media_items("series")}
+    # secondary lookup: imdb_id → item (for dedup)
+    series_by_imdb = {m["imdb_id"]: m for m in db.get_media_items("series")}
+
+    # Clean up messy titles on already-monitored entries
+    for imdb_id, row in existing_rows.items():
+        raw_title = row["title"] or ""
+        clean = _clean_series_title(raw_title)
+        if clean != raw_title:
+            seasons = [int(s) for s in (row.get("seasons") or "1").split(",") if s.strip().isdigit()]
+            tmdb_id = row.get("tmdb_id")
+            db.upsert_monitored_series(imdb_id, tmdb_id, clean, seasons or [1])
+            log.info("Cleaned series title: %r → %r", raw_title, clean)
 
     added = 0
     for series_dir in sorted(base.iterdir()):
         if not series_dir.is_dir():
             continue
-        title = series_dir.name
-        item = series_items.get(title)
+        folder_name = series_dir.name
+
+        # Resolve IMDb ID: DB lookup first, then scan strm files
+        item = series_items.get(folder_name)
         imdb_id = item["imdb_id"] if item else None
         if not imdb_id or imdb_id.startswith("unknown_"):
+            imdb_id = _imdb_from_strm_files(series_dir)
+        if not imdb_id or imdb_id.startswith("unknown_"):
             continue
-        if imdb_id in existing:
+        if imdb_id in existing_rows:
+            continue
+        if imdb_id in series_by_imdb and series_by_imdb[imdb_id]["imdb_id"].startswith("unknown_"):
             continue
 
         seasons = sorted({
@@ -130,9 +174,10 @@ def import_series_to_monitored() -> int:
         except Exception:
             pass
 
-        db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons)
-        existing.add(imdb_id)
-        log.info("Imported series to monitored: %s (%s) seasons=%s", title, imdb_id, seasons)
+        clean_title = _clean_series_title(folder_name)
+        db.upsert_monitored_series(imdb_id, tmdb_id, clean_title, seasons)
+        existing_rows[imdb_id] = {"imdb_id": imdb_id, "title": clean_title}
+        log.info("Imported series to monitored: %r (%s) seasons=%s", clean_title, imdb_id, seasons)
         added += 1
 
     log.info("import_series_to_monitored: added %d series", added)
