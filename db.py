@@ -217,6 +217,50 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_created       ON activity_log(create
 CREATE INDEX IF NOT EXISTS idx_webhook_events_received    ON webhook_events(received_at);
 CREATE INDEX IF NOT EXISTS idx_retry_queue_next           ON retry_queue(next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_repair_items_run           ON repair_items(cleanup_run_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    role          TEXT    NOT NULL DEFAULT 'user',
+    quota_monthly INTEGER NOT NULL DEFAULT 0,
+    auto_approve  INTEGER NOT NULL DEFAULT 0,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    last_login    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    imdb_id     TEXT    NOT NULL,
+    tmdb_id     INTEGER,
+    media_type  TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    poster_path TEXT,
+    added_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    UNIQUE(user_id, imdb_id, media_type)
+);
+
+CREATE TABLE IF NOT EXISTS user_requests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    imdb_id      TEXT    NOT NULL,
+    tmdb_id      INTEGER,
+    media_type   TEXT    NOT NULL,
+    title        TEXT    NOT NULL,
+    seasons      TEXT,
+    status       TEXT    NOT NULL DEFAULT 'pending',
+    reviewed_by  INTEGER,
+    reviewed_at  TEXT,
+    note         TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username             ON users(username);
+CREATE INDEX IF NOT EXISTS idx_watchlist_user             ON watchlist(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_requests_user_status  ON user_requests(user_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_requests_status       ON user_requests(status, created_at DESC);
 """
 
 
@@ -887,3 +931,157 @@ def get_recently_unfixable_paths(hours: int = 24) -> set[str]:
             (f"-{hours} hours",),
         ).fetchall()
         return {r["path"] for r in rows}
+
+
+# ── users / multi-user ────────────────────────────────────────────────────────
+
+def create_user(username: str, password_hash: str, role: str = "user",
+                 quota_monthly: int = 0, auto_approve: bool = False) -> int:
+    with _connect() as conn:
+        cur = conn.execute(
+            """INSERT INTO users (username, password_hash, role, quota_monthly, auto_approve)
+               VALUES (?, ?, ?, ?, ?)""",
+            (username, password_hash, role, quota_monthly, 1 if auto_approve else 0),
+        )
+        return cur.lastrowid
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_user(user_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT id, username, role, quota_monthly, auto_approve, enabled, created_at, last_login FROM users ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_user(user_id: int, **fields) -> None:
+    if not fields:
+        return
+    allowed = {"password_hash", "role", "quota_monthly", "auto_approve", "enabled"}
+    cols = [k for k in fields if k in allowed]
+    if not cols:
+        return
+    sql = "UPDATE users SET " + ", ".join(f"{c}=?" for c in cols) + " WHERE id=?"
+    vals = [fields[c] for c in cols] + [user_id]
+    with _connect() as conn:
+        conn.execute(sql, vals)
+
+
+def touch_user_login(user_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE users SET last_login=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=?",
+                     (user_id,))
+
+
+def delete_user(user_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
+def user_count() -> int:
+    with _connect() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+
+
+# ── watchlist ─────────────────────────────────────────────────────────────────
+
+def add_to_watchlist(user_id: int, imdb_id: str, tmdb_id: int | None,
+                     media_type: str, title: str, poster_path: str | None = None) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO watchlist (user_id, imdb_id, tmdb_id, media_type, title, poster_path)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, imdb_id, media_type) DO NOTHING""",
+            (user_id, imdb_id, tmdb_id, media_type, title, poster_path),
+        )
+
+
+def remove_from_watchlist(user_id: int, imdb_id: str, media_type: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM watchlist WHERE user_id=? AND imdb_id=? AND media_type=?",
+            (user_id, imdb_id, media_type),
+        )
+
+
+def get_watchlist(user_id: int) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM watchlist WHERE user_id=? ORDER BY added_at DESC", (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── user_requests (approval flow) ─────────────────────────────────────────────
+
+def create_user_request(user_id: int, imdb_id: str, tmdb_id: int | None,
+                        media_type: str, title: str, seasons: list[int] | None = None,
+                        status: str = "pending") -> int:
+    seasons_str = ",".join(str(s) for s in (seasons or [])) or None
+    with _connect() as conn:
+        cur = conn.execute(
+            """INSERT INTO user_requests (user_id, imdb_id, tmdb_id, media_type, title, seasons, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, imdb_id, tmdb_id, media_type, title, seasons_str, status),
+        )
+        return cur.lastrowid
+
+
+def get_user_requests(user_id: int | None = None, status: str | None = None,
+                       limit: int = 200) -> list[dict]:
+    sql = """SELECT ur.*, u.username
+             FROM user_requests ur
+             JOIN users u ON u.id = ur.user_id"""
+    where = []
+    args: list = []
+    if user_id is not None:
+        where.append("ur.user_id=?")
+        args.append(user_id)
+    if status:
+        where.append("ur.status=?")
+        args.append(status)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY ur.created_at DESC LIMIT ?"
+    args.append(limit)
+    with _connect() as conn:
+        rows = conn.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_user_request_status(req_id: int, status: str, reviewed_by: int | None = None,
+                                note: str | None = None) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """UPDATE user_requests
+               SET status=?, reviewed_by=?, reviewed_at=strftime('%Y-%m-%d %H:%M:%S','now'),
+                   note=COALESCE(?, note)
+               WHERE id=?""",
+            (status, reviewed_by, note, req_id),
+        )
+
+
+def get_user_request(req_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM user_requests WHERE id=?", (req_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def count_user_requests_this_month(user_id: int) -> int:
+    with _connect() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS n FROM user_requests
+               WHERE user_id=? AND created_at >= strftime('%Y-%m-01 00:00:00','now')""",
+            (user_id,),
+        ).fetchone()
+        return row["n"] if row else 0

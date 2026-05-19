@@ -1013,6 +1013,331 @@ import webdav
 _WEBDAV_METHODS = ["OPTIONS", "GET", "HEAD", "PROPFIND"]
 
 
+# ── Discover (TMDB) ──────────────────────────────────────────────────────────
+
+@app.get("/ui/api/discover/search")
+def ui_api_discover_search():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(results=[])
+    page = int(request.args.get("page") or "1")
+    results = tmdb.multi_search(q, page=page)
+    return jsonify(results=results)
+
+
+@app.get("/ui/api/discover/trending")
+def ui_api_discover_trending():
+    media = request.args.get("type", "all")  # all | movie | tv
+    window = request.args.get("window", "week")  # day | week
+    return jsonify(results=tmdb.trending(media, window))
+
+
+@app.get("/ui/api/discover/popular")
+def ui_api_discover_popular():
+    media = request.args.get("type", "movie")
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    return jsonify(results=tmdb.popular(media, region=region))
+
+
+@app.get("/ui/api/discover/top-rated")
+def ui_api_discover_top_rated():
+    media = request.args.get("type", "movie")
+    return jsonify(results=tmdb.top_rated(media))
+
+
+@app.get("/ui/api/discover/now-playing")
+def ui_api_discover_now_playing():
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    return jsonify(results=tmdb.now_playing(region=region))
+
+
+@app.get("/ui/api/discover/upcoming")
+def ui_api_discover_upcoming():
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    return jsonify(results=tmdb.upcoming(region=region))
+
+
+@app.get("/ui/api/discover/on-the-air")
+def ui_api_discover_on_the_air():
+    return jsonify(results=tmdb.on_the_air())
+
+
+@app.get("/ui/api/discover/providers")
+def ui_api_discover_providers():
+    media = request.args.get("type", "movie")
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    return jsonify(providers=tmdb.list_providers(media, region=region))
+
+
+@app.get("/ui/api/discover/by-provider")
+def ui_api_discover_by_provider():
+    media = request.args.get("type", "movie")
+    pid = int(request.args.get("provider_id") or "0")
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    if not pid:
+        return jsonify(error="provider_id required"), 400
+    return jsonify(results=tmdb.discover_by_provider(media, pid, region=region))
+
+
+@app.get("/ui/api/discover/details")
+def ui_api_discover_details():
+    media = request.args.get("type", "movie")
+    tmdb_id = int(request.args.get("id") or "0")
+    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    if not tmdb_id:
+        return jsonify(error="id required"), 400
+    detail = tmdb.details(media, tmdb_id, region=region)
+    if not detail:
+        return jsonify(error="not found"), 404
+    return jsonify(detail)
+
+
+@app.post("/ui/api/discover/add")
+def ui_api_discover_add():
+    """One-click add: resolve TMDB→IMDB, queue for processing."""
+    payload = request.get_json(silent=True) or {}
+    tmdb_id = payload.get("tmdb_id")
+    media_type = payload.get("media_type") or "movie"
+    title = payload.get("title") or ""
+    if not tmdb_id or not title:
+        return jsonify(error="tmdb_id and title required"), 400
+
+    imdb_id = tmdb.tmdb_to_imdb(tmdb_id, media_type=media_type)
+    if not imdb_id:
+        return jsonify(error="could not resolve imdb_id"), 400
+
+    user_rec = auth.current_user_record()
+    if user_rec and user_rec.get("id"):
+        # Multi-user mode: go through approval flow
+        auto = bool(user_rec.get("auto_approve")) or user_rec.get("role") == "admin"
+        status = "approved" if auto else "pending"
+        rid = db.create_user_request(user_rec["id"], imdb_id, tmdb_id, media_type,
+                                       title, status=status)
+        if status == "approved":
+            _kick_off_processing(title, imdb_id, media_type, tmdb_id)
+        return jsonify(status=status, request_id=rid, imdb_id=imdb_id)
+
+    # Single-user / legacy mode: process immediately
+    _kick_off_processing(title, imdb_id, media_type, tmdb_id)
+    return jsonify(status="queued", imdb_id=imdb_id)
+
+
+def _kick_off_processing(title: str, imdb_id: str, media_type: str,
+                          tmdb_id: int | None = None) -> None:
+    from webhook_parser import MediaRequest
+    if media_type == "tv":
+        try:
+            show = tmdb.get_show_info(tmdb_id) if tmdb_id else None
+            n_seasons = (show or {}).get("number_of_seasons") or 1
+            db.upsert_monitored_series(imdb_id, tmdb_id, title,
+                                         list(range(1, n_seasons + 1)))
+        except Exception as exc:
+            log.warning("upsert_monitored_series failed: %s", exc)
+        req = MediaRequest(title=title, media_type="series", imdb_id=imdb_id, seasons=[])
+    else:
+        req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[])
+    threading.Thread(
+        target=processor.process, args=(req,),
+        name=f"discover-{imdb_id}", daemon=True,
+    ).start()
+
+
+# ── Watchlist (per user) ─────────────────────────────────────────────────────
+
+@app.get("/ui/api/watchlist")
+def ui_api_watchlist_get():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(items=[])
+    return jsonify(items=db.get_watchlist(rec["id"]))
+
+
+@app.post("/ui/api/watchlist/add")
+def ui_api_watchlist_add():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="login required"), 401
+    p = request.get_json(silent=True) or {}
+    imdb = (p.get("imdb_id") or "").strip()
+    if not imdb:
+        return jsonify(error="imdb_id required"), 400
+    db.add_to_watchlist(rec["id"], imdb, p.get("tmdb_id"),
+                         p.get("media_type") or "movie",
+                         p.get("title") or "", p.get("poster_path"))
+    return jsonify(ok=True)
+
+
+@app.post("/ui/api/watchlist/remove")
+def ui_api_watchlist_remove():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="login required"), 401
+    p = request.get_json(silent=True) or {}
+    db.remove_from_watchlist(rec["id"], (p.get("imdb_id") or "").strip(),
+                              p.get("media_type") or "movie")
+    return jsonify(ok=True)
+
+
+# ── User requests (approval flow) ────────────────────────────────────────────
+
+@app.get("/ui/api/user-requests")
+def ui_api_user_requests():
+    rec = auth.current_user_record()
+    if not rec:
+        return jsonify(items=[])
+    if rec.get("role") == "admin":
+        status = request.args.get("status") or None
+        return jsonify(items=db.get_user_requests(status=status))
+    return jsonify(items=db.get_user_requests(user_id=rec["id"]))
+
+
+@app.post("/ui/api/user-requests/<int:req_id>/approve")
+def ui_api_user_request_approve(req_id: int):
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    rec = auth.current_user_record()
+    r = db.get_user_request(req_id)
+    if not r:
+        return jsonify(error="not found"), 404
+    db.update_user_request_status(req_id, "approved",
+                                   reviewed_by=(rec or {}).get("id"))
+    _kick_off_processing(r["title"], r["imdb_id"], r["media_type"], r.get("tmdb_id"))
+    return jsonify(ok=True)
+
+
+@app.post("/ui/api/user-requests/<int:req_id>/deny")
+def ui_api_user_request_deny(req_id: int):
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    rec = auth.current_user_record()
+    p = request.get_json(silent=True) or {}
+    db.update_user_request_status(req_id, "denied",
+                                   reviewed_by=(rec or {}).get("id"),
+                                   note=p.get("note"))
+    return jsonify(ok=True)
+
+
+# ── User management (admin) ──────────────────────────────────────────────────
+
+@app.get("/ui/api/users")
+def ui_api_users():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    return jsonify(users=db.list_users())
+
+
+@app.post("/ui/api/users/create")
+def ui_api_users_create():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    p = request.get_json(silent=True) or {}
+    username = (p.get("username") or "").strip()
+    password = p.get("password") or ""
+    role = p.get("role") or "user"
+    auto = bool(p.get("auto_approve"))
+    if not username or len(password) < 4:
+        return jsonify(error="username + password (≥4 chars) required"), 400
+    try:
+        uid = auth.create_user_account(username, password, role=role, auto_approve=auto)
+        return jsonify(ok=True, user_id=uid)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post("/ui/api/users/<int:user_id>/update")
+def ui_api_users_update(user_id: int):
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    p = request.get_json(silent=True) or {}
+    fields: dict = {}
+    if "role" in p: fields["role"] = p["role"]
+    if "quota_monthly" in p: fields["quota_monthly"] = int(p["quota_monthly"])
+    if "auto_approve" in p: fields["auto_approve"] = 1 if p["auto_approve"] else 0
+    if "enabled" in p: fields["enabled"] = 1 if p["enabled"] else 0
+    if p.get("password"):
+        if len(p["password"]) < 4:
+            return jsonify(error="password too short"), 400
+        fields["password_hash"] = auth.hash_password(p["password"])
+    db.update_user(user_id, **fields)
+    return jsonify(ok=True)
+
+
+@app.post("/ui/api/users/<int:user_id>/delete")
+def ui_api_users_delete(user_id: int):
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    db.delete_user(user_id)
+    return jsonify(ok=True)
+
+
+# ── Auto-add now (trigger immediately) ───────────────────────────────────────
+
+@app.post("/ui/api/auto-add-now")
+def ui_api_auto_add_now():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    threading.Thread(target=trending.run, name="auto-add-manual", daemon=True).start()
+    return jsonify(ok=True, message="auto-add started in background")
+
+
+# ── Radarr / Sonarr import ───────────────────────────────────────────────────
+
+@app.get("/ui/api/arr-import/status")
+def ui_api_arr_import_status():
+    import arr_import
+    return jsonify(arr_import.get_status())
+
+
+@app.post("/ui/api/arr-import/radarr")
+def ui_api_arr_import_radarr():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    import arr_import
+    only_monitored = (request.get_json(silent=True) or {}).get("only_monitored", True)
+    threading.Thread(target=arr_import.import_radarr,
+                      kwargs={"only_monitored": only_monitored},
+                      name="radarr-import", daemon=True).start()
+    return jsonify(ok=True)
+
+
+@app.post("/ui/api/arr-import/sonarr")
+def ui_api_arr_import_sonarr():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    import arr_import
+    only_monitored = (request.get_json(silent=True) or {}).get("only_monitored", True)
+    threading.Thread(target=arr_import.import_sonarr,
+                      kwargs={"only_monitored": only_monitored},
+                      name="sonarr-import", daemon=True).start()
+    return jsonify(ok=True)
+
+
+@app.post("/ui/api/arr-import/test-radarr")
+def ui_api_arr_import_test_radarr():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    p = request.get_json(silent=True) or {}
+    url = p.get("url") or cfg.RADARR_URL
+    key = p.get("api_key") or cfg.RADARR_API_KEY
+    if not url or not key:
+        return jsonify(ok=False, error="url + api_key required"), 400
+    import radarr
+    return jsonify(ok=radarr.ping(url, key))
+
+
+@app.post("/ui/api/arr-import/test-sonarr")
+def ui_api_arr_import_test_sonarr():
+    if not auth.is_admin():
+        return jsonify(error="admin required"), 403
+    p = request.get_json(silent=True) or {}
+    url = p.get("url") or cfg.SONARR_URL
+    key = p.get("api_key") or cfg.SONARR_API_KEY
+    if not url or not key:
+        return jsonify(ok=False, error="url + api_key required"), 400
+    import sonarr
+    return jsonify(ok=sonarr.ping(url, key))
+
+
 @app.route(
     f"{cfg.WEBDAV_PATH_PREFIX}/",
     defaults={"path_suffix": ""},

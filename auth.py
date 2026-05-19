@@ -142,11 +142,87 @@ def current_user() -> str | None:
     return session.get("user") or _proxy_user()
 
 
+def current_user_record() -> dict | None:
+    """Return the full users-table row for the active session, or None.
+    Falls back to a synthetic 'admin' record for the legacy single-user mode."""
+    uid = session.get("user_id")
+    if uid:
+        import db
+        u = db.get_user(uid)
+        if u:
+            return u
+    user = current_user()
+    if user:
+        # Legacy / proxy-auth path: synthesize an admin record
+        return {"id": 0, "username": user, "role": "admin", "auto_approve": 1,
+                "quota_monthly": 0, "enabled": 1}
+    return None
+
+
+def is_admin() -> bool:
+    rec = current_user_record()
+    return bool(rec and rec.get("role") == "admin")
+
+
 def attempt_login(username: str, password: str) -> bool:
+    """Authenticate against either the users table (multi-user) or the
+    legacy single-user AUTH_USERNAME/AUTH_PASSWORD_HASH settings."""
+    # Try DB-backed user first
+    try:
+        import db
+        u = db.get_user_by_username(username)
+        if u and u.get("enabled") and u.get("password_hash", "").startswith("scrypt$"):
+            if _verify_hashed(password, u["password_hash"]):
+                session["user"] = u["username"]
+                session["user_id"] = u["id"]
+                session["role"] = u["role"]
+                db.touch_user_login(u["id"])
+                return True
+    except Exception as exc:
+        log.warning("DB user auth failed: %s", exc)
+
+    # Legacy fallback
     expected_user = settings.get("AUTH_USERNAME", "admin") or "admin"
     if not hmac.compare_digest(username, expected_user):
         return False
-    return _verify_password(password)
+    if _verify_password(password):
+        session["user"] = expected_user
+        session["role"] = "admin"
+        return True
+    return False
+
+
+def create_user_account(username: str, password: str, role: str = "user",
+                         auto_approve: bool = False) -> int:
+    import db
+    if db.get_user_by_username(username):
+        raise ValueError(f"User '{username}' already exists")
+    return db.create_user(username, hash_password(password), role=role,
+                          auto_approve=auto_approve)
+
+
+def change_user_password(user_id: int, new_password: str) -> None:
+    import db
+    db.update_user(user_id, password_hash=hash_password(new_password))
+
+
+def require_role(role: str):
+    """Decorator: require a specific role (e.g. 'admin')."""
+    def deco(view):
+        @functools.wraps(view)
+        def wrapped(*args, **kwargs):
+            if not is_enabled():
+                return view(*args, **kwargs)
+            rec = current_user_record()
+            if not rec:
+                if request.path.startswith("/ui/api/") or request.headers.get("Accept", "").startswith("application/json"):
+                    return jsonify(error="unauthorized"), 401
+                return redirect(url_for("login_view", next=request.path))
+            if rec.get("role") != role and role != "user":
+                return jsonify(error="forbidden"), 403
+            return view(*args, **kwargs)
+        return wrapped
+    return deco
 
 
 def require_auth(view):

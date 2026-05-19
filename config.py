@@ -125,6 +125,23 @@ SEASON_PACK_CHECK_INTERVAL_HOURS = _env_int("SEASON_PACK_CHECK_INTERVAL_HOURS", 
 TRENDING_PRECACHE_COUNT = _env_int("TRENDING_PRECACHE_COUNT", 0)
 TRENDING_CHECK_INTERVAL_HOURS = _env_int("TRENDING_CHECK_INTERVAL_HOURS", 24)
 
+# Optional extra auto-add categories. 0 disables each.
+TRENDING_TV_COUNT = _env_int("TRENDING_TV_COUNT", 0)
+POPULAR_MOVIE_COUNT = _env_int("POPULAR_MOVIE_COUNT", 0)
+POPULAR_TV_COUNT = _env_int("POPULAR_TV_COUNT", 0)
+NETFLIX_NL_TOP_COUNT = _env_int("NETFLIX_NL_TOP_COUNT", 0)
+PRIME_NL_TOP_COUNT = _env_int("PRIME_NL_TOP_COUNT", 0)
+DISNEY_NL_TOP_COUNT = _env_int("DISNEY_NL_TOP_COUNT", 0)
+AUTO_ADD_MIN_RATING = float(_env("AUTO_ADD_MIN_RATING", "6.0"))
+AUTO_ADD_MIN_VOTES = _env_int("AUTO_ADD_MIN_VOTES", 100)
+AUTO_ADD_REGION = _env("AUTO_ADD_REGION", "NL")
+
+# ── Radarr / Sonarr import ────────────────────────────────────────────────────
+RADARR_URL = _env("RADARR_URL", "")
+RADARR_API_KEY = _env("RADARR_API_KEY", "")
+SONARR_URL = _env("SONARR_URL", "")
+SONARR_API_KEY = _env("SONARR_API_KEY", "")
+
 # ── Health-aware processing ───────────────────────────────────────────────────
 # Cache health status for this many seconds; skip services that recently failed.
 HEALTH_CACHE_SECONDS = _env_int("HEALTH_CACHE_SECONDS", 60)

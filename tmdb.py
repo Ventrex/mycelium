@@ -108,3 +108,200 @@ def search_tv(title: str) -> str | None:
         return None
     tmdb_id = results[0]["id"]
     return tmdb_to_imdb(tmdb_id, media_type="tv")
+
+
+# ── Discovery / Discover ──────────────────────────────────────────────────────
+
+def _norm_item(item: dict, media_type: str | None = None) -> dict:
+    """Normalize a TMDB movie/tv result into a uniform dict for our UI."""
+    mt = media_type or item.get("media_type") or ("tv" if item.get("first_air_date") else "movie")
+    return {
+        "tmdb_id": item.get("id"),
+        "media_type": mt,
+        "title": item.get("title") or item.get("name") or "",
+        "original_title": item.get("original_title") or item.get("original_name") or "",
+        "year": ((item.get("release_date") or item.get("first_air_date") or "")[:4]) or None,
+        "rating": round(float(item.get("vote_average") or 0), 1),
+        "votes": item.get("vote_count") or 0,
+        "popularity": item.get("popularity") or 0,
+        "overview": item.get("overview") or "",
+        "poster_path": item.get("poster_path"),
+        "backdrop_path": item.get("backdrop_path"),
+        "genre_ids": item.get("genre_ids") or [],
+    }
+
+
+def multi_search(query: str, page: int = 1) -> list[dict]:
+    """Multi-search across movies + TV. Returns normalized list."""
+    if not query.strip():
+        return []
+    data = _get("/search/multi", params={"query": query, "page": page, "include_adult": "false"})
+    if not data:
+        return []
+    out = []
+    for item in (data.get("results") or []):
+        if item.get("media_type") not in ("movie", "tv"):
+            continue
+        out.append(_norm_item(item))
+    return out
+
+
+def trending(media_type: str = "all", window: str = "week", page: int = 1) -> list[dict]:
+    """media_type: all | movie | tv ; window: day | week"""
+    data = _get(f"/trending/{media_type}/{window}", params={"page": page})
+    if not data:
+        return []
+    return [_norm_item(i) for i in (data.get("results") or [])]
+
+
+def popular(media_type: str = "movie", page: int = 1, region: str | None = None) -> list[dict]:
+    params: dict = {"page": page}
+    if region:
+        params["region"] = region
+    data = _get(f"/{media_type}/popular", params=params)
+    if not data:
+        return []
+    return [_norm_item(i, media_type=media_type) for i in (data.get("results") or [])]
+
+
+def top_rated(media_type: str = "movie", page: int = 1) -> list[dict]:
+    data = _get(f"/{media_type}/top_rated", params={"page": page})
+    if not data:
+        return []
+    return [_norm_item(i, media_type=media_type) for i in (data.get("results") or [])]
+
+
+def now_playing(page: int = 1, region: str | None = None) -> list[dict]:
+    params: dict = {"page": page}
+    if region:
+        params["region"] = region
+    data = _get("/movie/now_playing", params=params)
+    if not data:
+        return []
+    return [_norm_item(i, media_type="movie") for i in (data.get("results") or [])]
+
+
+def upcoming(page: int = 1, region: str | None = None) -> list[dict]:
+    params: dict = {"page": page}
+    if region:
+        params["region"] = region
+    data = _get("/movie/upcoming", params=params)
+    if not data:
+        return []
+    return [_norm_item(i, media_type="movie") for i in (data.get("results") or [])]
+
+
+def on_the_air(page: int = 1) -> list[dict]:
+    """Currently airing TV shows."""
+    data = _get("/tv/on_the_air", params={"page": page})
+    if not data:
+        return []
+    return [_norm_item(i, media_type="tv") for i in (data.get("results") or [])]
+
+
+def discover_by_provider(media_type: str, provider_id: int, region: str = "NL",
+                          page: int = 1, sort_by: str = "popularity.desc") -> list[dict]:
+    """Discover content available on a specific streaming provider in a region."""
+    params = {
+        "watch_region": region,
+        "with_watch_providers": provider_id,
+        "with_watch_monetization_types": "flatrate",
+        "sort_by": sort_by,
+        "page": page,
+        "include_adult": "false",
+    }
+    data = _get(f"/discover/{media_type}", params=params)
+    if not data:
+        return []
+    return [_norm_item(i, media_type=media_type) for i in (data.get("results") or [])]
+
+
+def list_providers(media_type: str = "movie", region: str = "NL") -> list[dict]:
+    """List streaming providers available in a region."""
+    data = _get(f"/watch/providers/{media_type}", params={"watch_region": region})
+    if not data:
+        return []
+    out = []
+    for p in (data.get("results") or []):
+        out.append({
+            "id": p.get("provider_id"),
+            "name": p.get("provider_name"),
+            "logo_path": p.get("logo_path"),
+            "priority": p.get("display_priorities", {}).get(region, 999),
+        })
+    out.sort(key=lambda x: x["priority"])
+    return out
+
+
+def watch_providers_for(tmdb_id: int, media_type: str = "movie", region: str = "NL") -> dict:
+    """Return where a specific title streams in a region."""
+    kind = "movie" if media_type == "movie" else "tv"
+    data = _get(f"/{kind}/{tmdb_id}/watch/providers")
+    if not data:
+        return {}
+    by_region = (data.get("results") or {}).get(region) or {}
+    def _names(key):
+        return [{"id": x.get("provider_id"), "name": x.get("provider_name"),
+                 "logo_path": x.get("logo_path")} for x in (by_region.get(key) or [])]
+    return {
+        "flatrate": _names("flatrate"),
+        "rent": _names("rent"),
+        "buy": _names("buy"),
+        "link": by_region.get("link"),
+    }
+
+
+def details(media_type: str, tmdb_id: int, region: str = "NL") -> dict | None:
+    """Full detail page payload: metadata, credits, videos, providers, external IDs."""
+    kind = "movie" if media_type == "movie" else "tv"
+    data = _get(f"/{kind}/{tmdb_id}",
+                 params={"append_to_response": "credits,videos,external_ids,watch/providers,recommendations,similar"})
+    if not data:
+        return None
+    item = _norm_item(data, media_type=media_type)
+    item["imdb_id"] = (data.get("external_ids") or {}).get("imdb_id") or data.get("imdb_id")
+    item["runtime"] = data.get("runtime") or (data.get("episode_run_time") or [None])[0]
+    item["genres"] = [g.get("name") for g in (data.get("genres") or [])]
+    item["tagline"] = data.get("tagline") or ""
+    item["status"] = data.get("status") or ""
+    item["homepage"] = data.get("homepage") or ""
+    if media_type == "tv":
+        item["seasons"] = [
+            {"season_number": s.get("season_number"),
+             "episode_count": s.get("episode_count"),
+             "name": s.get("name"),
+             "poster_path": s.get("poster_path"),
+             "air_date": s.get("air_date")}
+            for s in (data.get("seasons") or []) if s.get("season_number", 0) >= 0
+        ]
+        item["number_of_seasons"] = data.get("number_of_seasons")
+        item["number_of_episodes"] = data.get("number_of_episodes")
+    cast = ((data.get("credits") or {}).get("cast") or [])[:12]
+    item["cast"] = [{"name": c.get("name"), "character": c.get("character"),
+                     "profile_path": c.get("profile_path")} for c in cast]
+    videos = ((data.get("videos") or {}).get("results") or [])
+    item["trailers"] = [{"key": v.get("key"), "name": v.get("name"), "site": v.get("site")}
+                         for v in videos if v.get("type") == "Trailer" and v.get("site") == "YouTube"][:3]
+    providers_payload = (data.get("watch/providers") or {}).get("results") or {}
+    region_p = providers_payload.get(region) or {}
+    item["providers"] = {
+        "flatrate": [{"id": x.get("provider_id"), "name": x.get("provider_name"),
+                      "logo_path": x.get("logo_path")} for x in (region_p.get("flatrate") or [])],
+        "link": region_p.get("link"),
+    }
+    item["recommendations"] = [_norm_item(r, media_type=media_type)
+                                for r in (data.get("recommendations") or {}).get("results", [])[:12]]
+    return item
+
+
+# Common Dutch / European providers — IDs from TMDB
+NL_PROVIDERS = {
+    "netflix": 8,
+    "amazon_prime": 119,
+    "disney_plus": 337,
+    "hbo_max": 1899,
+    "apple_tv_plus": 350,
+    "videoland": 563,
+    "npo_plus": 271,
+    "skyshowtime": 1773,
+}
