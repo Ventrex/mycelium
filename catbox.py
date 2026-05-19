@@ -8,8 +8,14 @@ CDN URL, and 307-redirects the client.
 After CATBOX_IDLE_MINUTES of inactivity an item is removed from TorBox to
 stay within TorBox's 30-day cache retention policy. The virtual entry stays
 in the DB so playback works again on the next request.
+
+Resolved CDN URLs are cached in-memory per token to avoid hammering TorBox's
+60/hour createtorrent + 300/min general rate limits when Jellyfin sends
+multiple probe/seek requests for the same item in quick succession.
 """
 import logging
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 
@@ -18,6 +24,46 @@ import torbox
 from config import CATBOX_HOST, CATBOX_IDLE_MINUTES
 
 log = logging.getLogger(__name__)
+
+
+_URL_CACHE_TTL_SEC = 300  # 5 minutes — TorBox CDN URLs typically valid for ~1h
+_url_cache: dict[str, tuple[str, float]] = {}
+_url_cache_lock = threading.Lock()
+
+_token_locks: dict[str, threading.Lock] = {}
+_token_locks_lock = threading.Lock()
+
+
+def _token_lock(token: str) -> threading.Lock:
+    with _token_locks_lock:
+        lock = _token_locks.get(token)
+        if lock is None:
+            lock = threading.Lock()
+            _token_locks[token] = lock
+        return lock
+
+
+def _cache_get(token: str) -> str | None:
+    with _url_cache_lock:
+        entry = _url_cache.get(token)
+        if entry and entry[1] > time.monotonic():
+            return entry[0]
+        if entry:
+            del _url_cache[token]
+    return None
+
+
+def _cache_put(token: str, url: str) -> None:
+    with _url_cache_lock:
+        _url_cache[token] = (url, time.monotonic() + _URL_CACHE_TTL_SEC)
+
+
+def invalidate_url_cache(token: str | None = None) -> None:
+    with _url_cache_lock:
+        if token is None:
+            _url_cache.clear()
+        else:
+            _url_cache.pop(token, None)
 
 
 def proxy_url(token: str) -> str:
@@ -34,7 +80,26 @@ def register(info_hash: str, magnet: str, title: str, media_type: str,
 
 
 def materialize(token: str) -> str | None:
-    """Ensure the torrent is in TorBox and return a fresh stream URL."""
+    """Ensure the torrent is in TorBox and return a fresh stream URL.
+    Cached URLs are served for up to 5 minutes to absorb Jellyfin's probe/seek
+    bursts without spending TorBox createtorrent rate-limit slots."""
+    cached = _cache_get(token)
+    if cached:
+        db.touch_virtual_item(token)
+        return cached
+
+    with _token_lock(token):
+        cached = _cache_get(token)
+        if cached:
+            db.touch_virtual_item(token)
+            return cached
+        url = _materialize_locked(token)
+        if url:
+            _cache_put(token, url)
+        return url
+
+
+def _materialize_locked(token: str) -> str | None:
     item = db.get_virtual_item(token)
     if not item:
         log.warning("Catbox: unknown token %s", token)

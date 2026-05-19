@@ -99,7 +99,7 @@ CATBOX_MODE = _env("CATBOX_MODE", "false").lower() in ("1", "true", "yes")
 # Externally reachable host for the proxy URL written into .strm files.
 # Example: http://10.0.0.10:8088 (must be reachable from Jellyfin).
 CATBOX_HOST = _env("CATBOX_HOST", "http://10.0.0.10:8088")
-CATBOX_IDLE_MINUTES = _env_int("CATBOX_IDLE_MINUTES", 60)
+CATBOX_IDLE_MINUTES = _env_int("CATBOX_IDLE_MINUTES", 1440)
 CATBOX_GC_INTERVAL_MINUTES = _env_int("CATBOX_GC_INTERVAL_MINUTES", 10)
 
 # ── DB backup ─────────────────────────────────────────────────────────────────
