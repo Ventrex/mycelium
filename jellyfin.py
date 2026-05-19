@@ -29,7 +29,7 @@ def merge_duplicate_versions(timeout: int = 60) -> bool:
     if not JELLYFIN_URL:
         log.warning("JELLYFIN_URL not set; skipping MergeVersions")
         return False
-    url = f"{JELLYFIN_URL.rstrip('/')}/Library/MergeVersions"
+    url = f"{JELLYFIN_URL.rstrip('/')}/Items/MergeVersions"
     headers = {}
     if JELLYFIN_API_KEY:
         headers["X-Emby-Token"] = JELLYFIN_API_KEY
