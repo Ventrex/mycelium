@@ -149,6 +149,14 @@ MULTI_DEBRID_ENABLED = _env("MULTI_DEBRID_ENABLED", "false").lower() in ("1", "t
 REALDEBRID_API_KEY = _env("REALDEBRID_API_KEY", "")
 REALDEBRID_BASE_URL = _env("REALDEBRID_BASE_URL", "https://api.real-debrid.com/rest/1.0")
 
+# ── WebDAV server (Plex / Emby compatibility) ─────────────────────────────────
+# When enabled, serves the .strm library as virtual .mkv files at /dav/...
+# Mount via davfs2 on the DSM host so Plex (or any other media server) can
+# scan and stream from a normal-looking filesystem path.
+WEBDAV_ENABLED = _env("WEBDAV_ENABLED", "false").lower() in ("1", "true", "yes")
+WEBDAV_PATH_PREFIX = _env("WEBDAV_PATH_PREFIX", "/dav")
+WEBDAV_URL_CACHE_TTL_SECONDS = _env_int("WEBDAV_URL_CACHE_TTL_SECONDS", 3600)
+
 
 def configure_logging() -> None:
     logging.basicConfig(

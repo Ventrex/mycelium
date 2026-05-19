@@ -760,6 +760,26 @@ def ui_show_override_delete(imdb_id: str):
     return redirect(url_for("ui_dashboard") + "#overrides")
 
 
+# ── WebDAV (opt-in, mount via davfs2 from DSM host) ───────────────────────────
+
+import webdav
+
+_WEBDAV_METHODS = ["OPTIONS", "GET", "HEAD", "PROPFIND"]
+
+
+@app.route(
+    f"{cfg.WEBDAV_PATH_PREFIX}/",
+    defaults={"path_suffix": ""},
+    methods=_WEBDAV_METHODS,
+)
+@app.route(
+    f"{cfg.WEBDAV_PATH_PREFIX}/<path:path_suffix>",
+    methods=_WEBDAV_METHODS,
+)
+def webdav_handler(path_suffix: str):
+    return webdav.dispatch(path_suffix)
+
+
 if __name__ == "__main__":
     log.info("Starting Mycelium on %s:%d", LISTEN_HOST, LISTEN_PORT)
     app.run(host=LISTEN_HOST, port=LISTEN_PORT)

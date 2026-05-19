@@ -244,6 +244,53 @@ The container exposes three endpoints:
 
 In **Synology Container Manager** the healthcheck is picked up automatically; a red badge means the container will be auto-restarted within ~3 minutes.
 
+### WebDAV / Plex compatibility (opt-in)
+
+Mycelium can serve the library as virtual `.mkv` files via WebDAV. Mount the
+share at the DSM host and any media server (Plex, Emby, Kodi, Infuse) can
+scan it like a normal filesystem. The container itself does **not** require
+FUSE — the mount is done at host level using DSM's built-in `davfs2`.
+
+**Enable it:**
+
+```env
+WEBDAV_ENABLED=true
+```
+
+(or toggle in the Settings tab once the container is up).
+
+**Mount on the DSM host** (one-time):
+
+```bash
+# SSH into DSM, then:
+sudo synopkg install davfs2          # via Package Center if not present
+sudo mkdir -p /volume1/mycelium-library
+sudo mount -t davfs \
+    http://localhost:8088/dav \
+    /volume1/mycelium-library
+```
+
+Add to `/etc/fstab` for auto-remount after reboot:
+
+```
+http://localhost:8088/dav  /volume1/mycelium-library  davfs  rw,user,_netdev  0  0
+```
+
+**Wire into Plex** in your other compose file:
+
+```yaml
+services:
+  plex:
+    image: plexinc/pms-docker
+    volumes:
+      - /volume1/mycelium-library:/data/library:ro
+    # ... rest of plex config
+```
+
+Plex sees `/data/library/movies/Inception (2010)/Inception (2010).mkv` as a regular file. On read, Mycelium streams bytes from TorBox CDN with HTTP Range support so seeking and transcoding work transparently.
+
+**Supported methods:** `OPTIONS`, `PROPFIND`, `HEAD`, `GET` (read-only).
+
 ### Grafana dashboard
 
 A ready-made dashboard lives at [`assets/grafana-dashboard.json`](assets/grafana-dashboard.json). It includes:
@@ -314,7 +361,7 @@ If the DB itself is corrupted: Overview → **🚑 Recovery wizard** rebuilds th
 ## 🗺 Roadmap
 
 - [x] ~~Multi-debrid productionised (RealDebrid as actual fallback)~~ — movies + season-pack series done
-- [ ] Plex compatibility via in-container SMB/WebDAV proxy
+- [x] ~~Plex compatibility via WebDAV~~ — mount via davfs2 on DSM host
 - [x] ~~Prometheus metrics export~~ — exposed at `/metrics`
 - [ ] Web-based one-click installer
 - [ ] Light official theme
