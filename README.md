@@ -62,6 +62,8 @@ What started as a simple 100-line webhook to catch a Seerr approval and add a to
 
 The name felt right. Mycelium.
 
+> *Mycelium is the network of fungal threads beneath every forest. It connects the trees and keeps them alive. The mushroom is the only part you see.*
+
 ---
 
 ## ✨ Features
