@@ -1,5 +1,8 @@
+import logging
 import sqlite3
 from config import DB_PATH
+
+log = logging.getLogger(__name__)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS requests (
@@ -168,11 +171,69 @@ def _connect() -> sqlite3.Connection:
 
 def init() -> None:
     with _connect() as conn:
+        # WAL gives concurrent reads while a writer runs — much friendlier under
+        # the background scheduler + webhook traffic mix.
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=5000")
+        except Exception as exc:
+            log.warning("PRAGMA setup failed: %s", exc)
         for stmt in _DDL.split(";"):
             stmt = stmt.strip()
             if stmt:
                 conn.execute(stmt)
         conn.commit()
+    integrity_check()
+
+
+def integrity_check() -> bool:
+    """Run SQLite integrity_check. Logs warnings on failure, returns True if OK."""
+    try:
+        with _connect() as conn:
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+            ok = bool(row) and (row[0] == "ok" or row["integrity_check"] == "ok")
+        if ok:
+            log.info("DB integrity: ok")
+        else:
+            log.error("DB integrity: %s", row)
+        return ok
+    except Exception as exc:
+        log.error("DB integrity check failed: %s", exc)
+        return False
+
+
+def vacuum() -> None:
+    try:
+        with _connect() as conn:
+            conn.execute("VACUUM")
+        log.info("DB vacuum: done")
+    except Exception as exc:
+        log.warning("DB vacuum failed: %s", exc)
+
+
+def prune_old(days: int = 90) -> dict[str, int]:
+    """Delete rows in volatile tables older than N days. Returns count per table."""
+    out: dict[str, int] = {}
+    targets = ("activity_log", "webhook_events", "metric_events")
+    with _connect() as conn:
+        for tbl in targets:
+            try:
+                cur = conn.execute(
+                    f"DELETE FROM {tbl} WHERE "
+                    + ("received_at" if tbl == "webhook_events" else "created_at")
+                    + f" < datetime('now','-{days} days')"
+                )
+                out[tbl] = cur.rowcount or 0
+            except Exception as exc:
+                log.debug("prune %s failed: %s", tbl, exc)
+                out[tbl] = 0
+        conn.commit()
+    total = sum(out.values())
+    if total:
+        log.info("Pruned %d old row(s): %s", total, out)
+    return out
 
 
 # ── requests ──────────────────────────────────────────────────────────────────

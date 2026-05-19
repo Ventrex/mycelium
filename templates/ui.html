@@ -259,6 +259,15 @@
         <form method="post" action="/ui/sync-movies" style="display:inline">
           <button class="btn btn-secondary btn-sm">↻ Sync Seerr</button>
         </form>
+        <form method="post" action="/ui/library-import" style="display:inline">
+          <button class="btn btn-secondary btn-sm">📚 Import library</button>
+        </form>
+        <form method="post" action="/ui/db-vacuum" style="display:inline">
+          <button class="btn btn-secondary btn-sm">🧹 Vacuum DB</button>
+        </form>
+        <form method="post" action="/ui/recovery" style="display:inline">
+          <button class="btn btn-primary btn-sm">🚑 Recovery wizard</button>
+        </form>
       </div>
     </div>
 
@@ -292,6 +301,13 @@
       <div class="card">
         <div class="card-title">Source Win Rate</div>
         <div id="source-bars" class="quality-bars"><div class="dim" style="font-size:12px">No data yet</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Library Health</div>
+      <div id="lib-health" style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px">
+        <div class="dim">Loading…</div>
       </div>
     </div>
 
@@ -920,6 +936,21 @@
             <div class="quality-count">${s.count}</div></div>`;
         }).join('');
       }
+    } catch(e) {}
+
+    // Library health (orphans)
+    try {
+      const r = await fetch('/ui/api/orphans');
+      const d = await r.json();
+      const el = document.getElementById('lib-health');
+      const badStrm = d.strm_without_db > 0;
+      const badDb = d.db_without_strm > 0;
+      el.innerHTML = `
+        <div><div class="stat-val" style="font-size:18px">${d.strm_count}</div><div class="stat-lbl">.strm files</div></div>
+        <div><div class="stat-val" style="font-size:18px">${d.db_count}</div><div class="stat-lbl">DB items</div></div>
+        <div><div class="stat-val" style="font-size:18px;color:${badStrm?'var(--amber)':'var(--green)'}">${d.strm_without_db}</div><div class="stat-lbl">strm ⊄ DB</div></div>
+        <div><div class="stat-val" style="font-size:18px;color:${badDb?'var(--amber)':'var(--green)'}">${d.db_without_strm}</div><div class="stat-lbl">DB ⊄ strm</div></div>
+      `;
     } catch(e) {}
 
     // Retry queue

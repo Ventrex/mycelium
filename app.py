@@ -14,10 +14,12 @@ import continue_watching
 import db
 import health
 import jellyfin
+import library_sync
 import log_buffer
 import monitor
 import notify
 import processor
+import recovery
 import retry_queue
 import stats
 import strm_generator
@@ -26,6 +28,7 @@ import torbox
 import torrentio
 import trending
 import upgrader
+import watchdog
 import zilean
 from config import (
     AUTO_UPGRADE_ENABLED,
@@ -174,6 +177,27 @@ def _start_scheduler() -> BackgroundScheduler:
         )
         log.info("Scheduled TorBox quota check every %dh", QUOTA_CHECK_INTERVAL_HOURS)
 
+    # Watchdogs + maintenance
+    scheduler.add_job(watchdog.deadman_check, trigger="interval", hours=2,
+                       id="deadman", next_run_time=None, max_instances=1)
+    scheduler.add_job(watchdog.disk_check, trigger="interval", hours=1,
+                       id="disk_check", next_run_time=None, max_instances=1)
+    scheduler.add_job(lambda: db.prune_old(90), trigger="interval", hours=24,
+                       id="prune_old", next_run_time=None, max_instances=1)
+    scheduler.add_job(db.vacuum, trigger="interval", hours=24 * 7,
+                       id="vacuum", next_run_time=None, max_instances=1)
+    log.info("Scheduled watchdogs: deadman/2h, disk/1h, prune/24h, vacuum/weekly")
+
+    # Apply max_instances=1 to all overlap-sensitive jobs already added
+    for jid in ("strm_generator", "strm_cleanup", "series_monitor", "movie_sync",
+                 "retry_queue", "auto_upgrade", "pack_consolidation",
+                 "trending_precache", "continue_watching", "db_backup",
+                 "catbox_gc", "merge_versions", "quota_warn"):
+        try:
+            scheduler.modify_job(jid, max_instances=1)
+        except Exception:
+            pass
+
     scheduler.start()
     return scheduler
 
@@ -202,8 +226,30 @@ def _check_auth() -> None:
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
-def health():
+def health_simple():
+    """Lightweight liveness probe — process is up."""
     return jsonify(status="ok")
+
+
+@app.get("/healthz")
+def health_deep():
+    """Real readiness probe. Returns 503 if DB unreachable OR both scrapers down."""
+    import health_cache
+    status = "ok"
+    failures = []
+    try:
+        db.get_recent(1)
+    except Exception as exc:
+        status = "down"
+        failures.append(f"db: {exc}")
+    zilean_ok = health_cache.is_up("zilean")
+    torrentio_ok = health_cache.is_up("torrentio")
+    if not zilean_ok and not torrentio_ok:
+        status = "down"
+        failures.append("no scraper reachable")
+    code = 200 if status == "ok" else 503
+    return jsonify(status=status, failures=failures,
+                    zilean=zilean_ok, torrentio=torrentio_ok), code
 
 
 @app.post("/webhook")
@@ -600,6 +646,42 @@ def ui_settings_reset(key: str):
     settings.set(key, None)
     flash(f"Reset {key} to .env default", "ok")
     return redirect(url_for("ui_dashboard") + "#settings")
+
+
+# ── Robustness endpoints ──────────────────────────────────────────────────────
+
+@app.get("/ui/api/orphans")
+def ui_api_orphans():
+    return jsonify(library_sync.orphans())
+
+
+@app.post("/ui/library-import")
+def ui_library_import():
+    threading.Thread(target=library_sync.import_existing,
+                     name="lib-import", daemon=True).start()
+    flash("Library import started — check Logs for progress", "ok")
+    return redirect(url_for("ui_dashboard") + "#overview")
+
+
+@app.post("/ui/recovery")
+def ui_recovery():
+    threading.Thread(target=recovery.run, name="recovery-wizard", daemon=True).start()
+    flash("Recovery wizard started — runs integrity check + cleanup + import + strm scan", "ok")
+    return redirect(url_for("ui_dashboard") + "#overview")
+
+
+@app.post("/ui/db-vacuum")
+def ui_db_vacuum():
+    threading.Thread(target=db.vacuum, name="db-vacuum", daemon=True).start()
+    flash("DB vacuum started", "ok")
+    return redirect(url_for("ui_dashboard") + "#overview")
+
+
+@app.post("/ui/db-prune")
+def ui_db_prune():
+    threading.Thread(target=lambda: db.prune_old(90), name="db-prune", daemon=True).start()
+    flash("Pruning rows older than 90 days", "ok")
+    return redirect(url_for("ui_dashboard") + "#overview")
 
 
 @app.post("/ui/quota-check")

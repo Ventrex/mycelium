@@ -6,6 +6,7 @@ import blacklist
 import db
 import health_cache
 import jellyfin
+import locks
 import monitor
 import notify
 import strm_generator
@@ -157,6 +158,14 @@ def _process_season(req: MediaRequest, season: int) -> tuple[bool, Optional[Torr
 
 
 def process(req: MediaRequest, _retry_attempt: int = 0) -> bool:
+    with locks.imdb_mutex(req.imdb_id, blocking=False) as got:
+        if not got:
+            log.info("Skip: %s already in flight elsewhere", req.imdb_id)
+            return False
+        return _process_locked(req, _retry_attempt)
+
+
+def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
     log.info("Processing request: %s [%s] %s (attempt %d)",
              req.title, req.media_type, req.imdb_id, _retry_attempt)
     started = time.monotonic()
