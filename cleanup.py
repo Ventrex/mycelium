@@ -16,6 +16,11 @@ from torrentio import TorrentioStream
 
 log = logging.getLogger(__name__)
 
+
+class _RateLimitedError(Exception):
+    pass
+
+
 _YEAR_RE = re.compile(r"\((\d{4})\)$")
 _TORRENT_ID_RE = re.compile(r"torrent_id[=:](\d+)", re.IGNORECASE)
 _FILE_ID_RE = re.compile(r"file_id[=:](\d+)", re.IGNORECASE)
@@ -189,6 +194,7 @@ def _repair_strm(path: Path, run_id: int, mylist: list[dict]) -> str:
     to_try = cached or candidates[:1]
 
     winner: TorrentioStream | None = None
+    rate_limited = False
     for stream in to_try:
         try:
             torbox.add_magnet(stream.magnet)
@@ -197,6 +203,13 @@ def _repair_strm(path: Path, run_id: int, mylist: list[dict]) -> str:
             break
         except Exception as exc:
             log.warning("Failed to add replacement for '%s' (hash=%s): %s", title, stream.info_hash, exc)
+            if "429" in str(exc):
+                rate_limited = True
+                break
+
+    if rate_limited:
+        log.warning("Rate limited by TorBox for '%s' — will retry next cleanup run", title)
+        raise _RateLimitedError()
 
     if winner:
         try:
@@ -480,7 +493,11 @@ def run_cleanup() -> None:
             log.debug("Skipping recently-unfixable: %s", path.name)
             unfixable += 1
             continue
-        result = _repair_strm(path, run_id, mylist)
+        try:
+            result = _repair_strm(path, run_id, mylist)
+        except _RateLimitedError:
+            log.warning("Cleanup: TorBox rate limit hit — stopping repairs for this run")
+            break
         if result == "repaired":
             repaired += 1
             changed = True
