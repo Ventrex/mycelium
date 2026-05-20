@@ -21,6 +21,12 @@ from config import (
 
 log = logging.getLogger(__name__)
 
+_HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+}
+
 _QUALITY_PATTERNS = {
     "2160p": re.compile(r"\b(2160p|4k|uhd)\b", re.IGNORECASE),
     "1080p": re.compile(r"\b1080p\b", re.IGNORECASE),
@@ -151,7 +157,7 @@ def fetch_streams(
 ) -> list[TorrentioStream]:
     url = _build_url(media_type, imdb_id, season, episode)
     log.info("Querying Torrentio: %s", url)
-    resp = requests.get(url, timeout=timeout)
+    resp = requests.get(url, timeout=timeout, headers=_HTTP_HEADERS)
     resp.raise_for_status()
     payload = resp.json() or {}
     raw_streams = payload.get("streams", []) or []
