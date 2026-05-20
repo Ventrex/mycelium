@@ -196,6 +196,14 @@ def _start_scheduler() -> BackgroundScheduler:
         )
         log.info("Scheduled strm cleanup every %dh", CLEANUP_INTERVAL_HOURS)
 
+    if CATBOX_MODE:
+        scheduler.add_job(
+            strm_generator.repair_expired_strms,
+            trigger="interval", hours=6,
+            id="strm_repair", next_run_time=None,
+        )
+        log.info("Scheduled automatic .strm repair every 6h")
+
     if CATBOX_MODE and CATBOX_GC_INTERVAL_MINUTES > 0:
         scheduler.add_job(
             catbox.release_idle,
