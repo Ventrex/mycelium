@@ -437,6 +437,8 @@ def merge_series_duplicates() -> int:
     """Find series folders with the same IMDb ID and merge them into one canonical
     folder, moving all season/episode strm files across.  Returns number of
     duplicate folders removed."""
+    import xml.etree.ElementTree as ET
+
     series_base = Path(MEDIA_PATH) / "series"
     if not series_base.is_dir():
         return 0
@@ -444,12 +446,28 @@ def merge_series_duplicates() -> int:
     items_by_title = {m["title"]: m["imdb_id"] for m in db.get_media_items()}
     monitored = {s["imdb_id"]: s["title"] for s in db.get_all_monitored_series()}
 
+    def _nfo_imdb(folder: Path) -> str | None:
+        nfo = folder / "tvshow.nfo"
+        if not nfo.exists():
+            return None
+        try:
+            root = ET.parse(nfo).getroot()
+            for uid in root.findall("uniqueid"):
+                if uid.get("type") == "imdb" and uid.text:
+                    return uid.text.strip()
+        except Exception:
+            pass
+        return None
+
     # Group folders by resolved IMDb ID
     groups: dict[str, list[Path]] = {}
     for folder in series_base.iterdir():
         if not folder.is_dir():
             continue
-        imdb_id = items_by_title.get(folder.name)
+        # Primary: read directly from tvshow.nfo (always correct when present)
+        imdb_id = _nfo_imdb(folder)
+        if not imdb_id:
+            imdb_id = items_by_title.get(folder.name)
         if not imdb_id or imdb_id.startswith("unknown_"):
             clean = _series_clean_title(folder.name)
             if clean:
@@ -520,7 +538,11 @@ def run_cleanup() -> None:
     run_id = db.insert_cleanup_run()
     scanned = repaired = deleted = unfixable = 0
 
-    # 0. Sweep folders that have lost all their .strm files (leftover .nfo/posters)
+    # 0. Merge series folders that share the same IMDb ID (torrent-site prefixes,
+    #    case variants, year/season suffixes all land as separate folders).
+    merge_series_duplicates()
+
+    # 0b. Sweep folders that have lost all their .strm files (leftover .nfo/posters)
     orphan_removed = remove_orphan_folders()
 
     strm_files = _collect_strm_files()
