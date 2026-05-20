@@ -232,8 +232,10 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                     torbox.add_magnet(new_magnet, reason="catbox-fallback")
                     live = torbox.wait_until_ready(new_hash, timeout=ON_PLAY_READY_TIMEOUT_SEC)
                 if not live:
-                    log.error("Catbox: no playable release found for %s", item["title"])
+                    log.error("Catbox: no playable release found for %s — removing from library",
+                              item["title"])
                     _fail_put(token, _FAIL_COOLDOWN_SEC)
+                    _remove_strm(item)
                     return None
             torbox_id = live["id"]
             db.update_virtual_torbox_id(token, torbox_id)
@@ -270,7 +272,8 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                 db.update_virtual_file_id(token, file_id)
 
     if not file_id:
-        log.error("Catbox: no playable file found for %s", token)
+        log.error("Catbox: no playable file found for %s — removing from library", token)
+        _remove_strm(item)
         return None
 
     import strm_generator
@@ -291,6 +294,20 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
         except Exception:
             pass
     return url
+
+
+def _remove_strm(item: dict) -> None:
+    """Delete the .strm file for a definitively dead item so Jellyfin stops showing it."""
+    import os
+    strm_path = item.get("strm_path")
+    if not strm_path:
+        return
+    try:
+        if os.path.exists(strm_path):
+            os.remove(strm_path)
+            log.info("Catbox: removed dead .strm %s", strm_path)
+    except Exception as exc:
+        log.warning("Catbox: could not remove .strm %s: %s", strm_path, exc)
 
 
 def _find_fresh_cached_release(item: dict) -> tuple[str, str] | None:
