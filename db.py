@@ -787,6 +787,22 @@ def delete_virtual_item(token: str) -> None:
         conn.commit()
 
 
+def rename_virtual_item_paths(old_dir: str, new_dir: str) -> int:
+    """Bulk-update strm_path in virtual_items when a folder is renamed.
+    Replaces the old directory prefix with the new one. Returns rows updated."""
+    old_prefix = old_dir.rstrip("/") + "/"
+    new_prefix = new_dir.rstrip("/") + "/"
+    with _connect() as conn:
+        cur = conn.execute(
+            """UPDATE virtual_items
+               SET strm_path = ? || SUBSTR(strm_path, ?)
+               WHERE strm_path LIKE ?""",
+            (new_prefix, len(old_prefix) + 1, old_prefix + "%"),
+        )
+        conn.commit()
+        return cur.rowcount
+
+
 # ── failed_hashes (blacklist) ─────────────────────────────────────────────────
 
 def record_failed_hash(info_hash: str, error: str | None = None) -> None:

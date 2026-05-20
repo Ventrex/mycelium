@@ -530,16 +530,80 @@ def merge_series_duplicates() -> int:
     return removed
 
 
+def rename_messy_series_folders() -> int:
+    """Rename series folders whose name doesn't match the canonical DB title.
+
+    Reads IMDb ID from tvshow.nfo → looks up monitored_series.title → renames
+    the folder and updates virtual_items.strm_path so catbox proxy URLs keep
+    working.  Returns number of folders renamed."""
+    import xml.etree.ElementTree as ET
+    import shutil as _shutil
+
+    series_base = Path(MEDIA_PATH) / "series"
+    if not series_base.is_dir():
+        return 0
+
+    monitored = {s["imdb_id"]: s["title"] for s in db.get_all_monitored_series()}
+    renamed = 0
+
+    for folder in list(series_base.iterdir()):
+        if not folder.is_dir():
+            continue
+        nfo = folder / "tvshow.nfo"
+        if not nfo.exists():
+            continue
+        try:
+            root = ET.parse(nfo).getroot()
+            imdb_id = None
+            for uid in root.findall("uniqueid"):
+                if uid.get("type") == "imdb" and uid.text:
+                    imdb_id = uid.text.strip()
+                    break
+        except Exception:
+            continue
+        if not imdb_id:
+            continue
+
+        canonical_title = monitored.get(imdb_id)
+        if not canonical_title:
+            continue
+
+        import strm_generator as _sg
+        canonical_name = _sg._safe(canonical_title)
+        if not canonical_name or canonical_name == folder.name:
+            continue
+
+        new_folder = series_base / canonical_name
+        if new_folder.exists():
+            log.info("Rename skipped: target %r already exists (will be merged)", canonical_name)
+            continue
+
+        try:
+            folder.rename(new_folder)
+            updated = db.rename_virtual_item_paths(str(folder), str(new_folder))
+            log.info("Renamed series folder %r → %r (%d strm_path(s) updated)",
+                     folder.name, canonical_name, updated)
+            renamed += 1
+        except Exception as exc:
+            log.warning("Could not rename %s → %s: %s", folder.name, canonical_name, exc)
+
+    log.info("rename_messy_series_folders: %d folder(s) renamed", renamed)
+    return renamed
+
+
 def run_cleanup() -> None:
     log.info("Cleanup: starting strm scan in %s", MEDIA_PATH)
     run_id = db.insert_cleanup_run()
     scanned = repaired = deleted = unfixable = 0
 
-    # 0. Merge series folders that share the same IMDb ID (torrent-site prefixes,
+    # 0. Rename messy folder names to the canonical DB title.
+    rename_messy_series_folders()
+
+    # 0b. Merge series folders that share the same IMDb ID (torrent-site prefixes,
     #    case variants, year/season suffixes all land as separate folders).
     merge_series_duplicates()
 
-    # 0b. Sweep folders that have lost all their .strm files (leftover .nfo/posters)
+    # 0c. Sweep folders that have lost all their .strm files (leftover .nfo/posters)
     orphan_removed = remove_orphan_folders()
 
     strm_files = _collect_strm_files()
