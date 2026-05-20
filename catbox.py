@@ -215,9 +215,26 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             # backdrop) waiting on the default 10-minute poll window.
             live = torbox.wait_until_ready(item["info_hash"], timeout=ON_PLAY_READY_TIMEOUT_SEC)
             if not live:
-                log.error("Catbox: torrent never became ready: %s", item["info_hash"])
-                _fail_put(token, _FAIL_COOLDOWN_SEC)
-                return None
+                # Stored magnet is dead (no longer cached on TorBox). Re-query
+                # Torrentio for a fresh cached release and swap it in.
+                log.warning("Catbox: %s never became ready — searching for a fresh release",
+                            item["title"])
+                fresh = _find_fresh_cached_release(item)
+                if fresh:
+                    new_hash, new_magnet = fresh
+                    log.info("Catbox: swapping %s → fresh cached release %s",
+                             item["title"], new_hash)
+                    db.update_virtual_item_upgrade(token, new_hash, new_magnet, None, None)
+                    # New torrent has a different file layout — drop the stale file_id
+                    # so the file-resolution step below re-picks the right file.
+                    item["info_hash"] = new_hash
+                    item["file_id"] = None
+                    torbox.add_magnet(new_magnet, reason="catbox-fallback")
+                    live = torbox.wait_until_ready(new_hash, timeout=ON_PLAY_READY_TIMEOUT_SEC)
+                if not live:
+                    log.error("Catbox: no playable release found for %s", item["title"])
+                    _fail_put(token, _FAIL_COOLDOWN_SEC)
+                    return None
             torbox_id = live["id"]
             db.update_virtual_torbox_id(token, torbox_id)
         except Exception as exc:
@@ -274,6 +291,45 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
         except Exception:
             pass
     return url
+
+
+def _find_fresh_cached_release(item: dict) -> tuple[str, str] | None:
+    """The stored magnet is dead (no longer cached). Re-query Torrentio for the
+    same title and return (info_hash, magnet) of the best currently-cached
+    release, or None if nothing is cached right now.
+
+    Mirrors the lazy-registration logic in processor.py so the fallback honours
+    quality/language/remux preferences."""
+    imdb_id = item.get("imdb_id")
+    if not imdb_id:
+        log.info("Catbox fallback: no imdb_id for %s — cannot re-search", item["title"])
+        return None
+    try:
+        import torrentio
+        import debrid
+        import blacklist
+        media_type = item["media_type"]
+        season = item.get("season")
+        episode = item.get("episode")
+        streams = torrentio.fetch_streams(
+            "movie" if media_type == "movie" else "series",
+            imdb_id, season=season, episode=episode,
+        )
+        if not streams:
+            return None
+        ranked = torrentio.rank_streams(streams)
+        ranked = blacklist.filter_candidates(ranked)
+        if not ranked:
+            return None
+        cached = debrid.check_cached_multi([s.info_hash for s in ranked]).get("torbox", set())
+        for s in ranked:
+            if s.info_hash in cached and s.info_hash.lower() != (item.get("info_hash") or "").lower():
+                return s.info_hash.lower(), s.magnet
+        # If only the (dead) stored hash is "cached", nothing new to try.
+        return None
+    except Exception as exc:
+        log.warning("Catbox fallback: re-search failed for %s: %s", item["title"], exc)
+        return None
 
 
 def release_idle() -> int:
