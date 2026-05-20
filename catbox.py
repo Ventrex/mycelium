@@ -228,9 +228,9 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             _fail_put(token, _FAIL_COOLDOWN_SEC)
             return None
         if not fresh:
-            log.error("Catbox/RD: no cached release for %s — removing from library", item["title"])
-            _fail_put(token, _FAIL_COOLDOWN_SEC)
-            _remove_strm(item)
+            log.error("Catbox/RD: no cached release for %s — keeping .strm, retry in 6h",
+                      item["title"])
+            _fail_put(token, 21600)  # 6h — repair job will clean up if truly dead
             return None
 
         new_hash, new_magnet, provider = fresh
@@ -250,7 +250,6 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                 if not rd_info:
                     log.error("Catbox/RD: wait_until_ready timed out for %s", item["title"])
                     _fail_put(token, _FAIL_COOLDOWN_SEC)
-                    _remove_strm(item)
                     return None
                 db.update_virtual_rd_id(token, rd_id)
                 url = _rd_get_url(item, rd_id)
@@ -283,6 +282,35 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             log.info("Catbox: %s still in library (id=%s) — no re-add needed",
                      item["title"], torbox_id)
 
+    # Third chance: known hash may be cached on RD even if TorBox doesn't have it.
+    # This avoids a full Torrentio search for items where Torrentio returns 0 results.
+    if not torbox_id and item.get("info_hash") and allow_readd:
+        try:
+            import realdebrid as _rd
+            if _rd.is_configured():
+                known_hash = item["info_hash"].lower()
+                rd_instant = _rd.check_cached([known_hash])
+                if known_hash in {h.lower() for h in rd_instant}:
+                    log.info("Catbox: known hash cached on RD for %s — switching to RD path",
+                             item["title"])
+                    db.update_virtual_debrid_provider(token, "realdebrid")
+                    magnet = item.get("magnet") or f"magnet:?xt=urn:btih:{known_hash}"
+                    rd_result = _rd.add_magnet(magnet)
+                    rd_id = rd_result["id"]
+                    rd_info = _rd.wait_until_ready(rd_id)
+                    if rd_info:
+                        db.update_virtual_rd_id(token, rd_id)
+                        url = _rd_get_url(item, rd_id)
+                        if url:
+                            db.touch_virtual_item(token)
+                            _metrics_inc("rematerialized")
+                            return url
+                    log.error("Catbox: RD wait_until_ready timed out for %s", item["title"])
+                    _fail_put(token, _FAIL_COOLDOWN_SEC)
+                    return None
+        except Exception as exc:
+            log.warning("Catbox: RD known-hash check failed for %s: %s", item["title"], exc)
+
     if not torbox_id and not allow_readd:
         log.debug("Catbox: skipping re-add for %s during scan-burst probe", item["title"])
         return None
@@ -295,10 +323,9 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             _fail_put(token, _FAIL_COOLDOWN_SEC)
             return None
         if not fresh:
-            log.error("Catbox: no cached release found for %s — removing from library",
+            log.error("Catbox: no cached release found for %s — keeping .strm, retry in 6h",
                       item["title"])
-            _fail_put(token, _FAIL_COOLDOWN_SEC)
-            _remove_strm(item)
+            _fail_put(token, 21600)  # 6h — repair job will clean up if truly dead
             return None
 
         new_hash, new_magnet, provider = fresh
@@ -313,7 +340,6 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                 rd_info = _rd.wait_until_ready(rd_id)
                 if not rd_info:
                     _fail_put(token, _FAIL_COOLDOWN_SEC)
-                    _remove_strm(item)
                     return None
                 db.update_virtual_rd_id(token, rd_id)
                 item["rd_id"] = rd_id
@@ -338,10 +364,9 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             torbox.add_magnet(new_magnet, reason="catbox-search")
             live = torbox.wait_until_ready(new_hash, timeout=ON_PLAY_READY_TIMEOUT_SEC)
             if not live:
-                log.error("Catbox: fresh release not ready for %s — removing from library",
+                log.error("Catbox: fresh release not ready for %s — keeping .strm, retry soon",
                           item["title"])
                 _fail_put(token, _FAIL_COOLDOWN_SEC)
-                _remove_strm(item)
                 return None
             torbox_id = live["id"]
             db.update_virtual_torbox_id(token, torbox_id)
