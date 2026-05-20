@@ -601,15 +601,149 @@ def rename_messy_series_folders() -> int:
     return renamed
 
 
+def _movie_nfo_info(folder: Path) -> tuple[str | None, int | None, str | None]:
+    """Read (title, year, imdb_id) from a movie .nfo file in folder, if it exists."""
+    import xml.etree.ElementTree as ET
+    nfo = folder / f"{folder.name}.nfo"
+    if not nfo.exists():
+        # Try any .nfo in the folder
+        nfos = list(folder.glob("*.nfo"))
+        if not nfos:
+            return None, None, None
+        nfo = nfos[0]
+    try:
+        root = ET.parse(nfo).getroot()
+        title = root.findtext("title")
+        year_text = root.findtext("year")
+        year = int(year_text) if year_text and year_text.isdigit() else None
+        imdb_id = None
+        for uid in root.findall("uniqueid"):
+            if uid.get("type") == "imdb" and uid.text:
+                imdb_id = uid.text.strip()
+                break
+        return title or None, year, imdb_id
+    except Exception:
+        return None, None, None
+
+
+def merge_movie_duplicates() -> int:
+    """Merge movie folders that resolve to the same IMDb ID into one canonical
+    folder. Reads IMDb from .nfo; falls back to virtual_items. Returns count removed."""
+    import shutil as _shutil
+
+    movies_base = Path(MEDIA_PATH) / "movies"
+    if not movies_base.is_dir():
+        return 0
+
+    # Build imdb_id → canonical title mapping from DB requests
+    movie_titles: dict[str, str] = {
+        m["imdb_id"]: m["title"]
+        for m in db.get_media_items(media_type="movie")
+        if not m["imdb_id"].startswith("unknown_")
+    }
+
+    # Group folders by imdb_id
+    groups: dict[str, list[Path]] = {}
+    for folder in movies_base.iterdir():
+        if not folder.is_dir():
+            continue
+        title, year, imdb_id = _movie_nfo_info(folder)
+        if not imdb_id:
+            # Try virtual_items strm_path lookup
+            vi = db.get_virtual_item_by_hash("")  # won't help; skip for now
+            continue
+        groups.setdefault(imdb_id, []).append(folder)
+
+    removed = 0
+    for imdb_id, folders in groups.items():
+        if len(folders) <= 1:
+            continue
+        db_title = movie_titles.get(imdb_id, "")
+        # Prefer folder whose name starts with the DB title; else shortest name
+        canonical = next((f for f in folders if db_title and f.name.startswith(db_title)), None)
+        if not canonical:
+            canonical = min(folders, key=lambda f: len(f.name))
+        log.info("Movie dedup: keeping %r, removing %s",
+                 canonical.name, [f.name for f in folders if f != canonical])
+        for dup in folders:
+            if dup == canonical:
+                continue
+            # Move .strm to canonical folder if not already there
+            for strm in dup.glob("*.strm"):
+                dest = canonical / strm.name
+                if not dest.exists():
+                    try:
+                        dest.write_text(strm.read_text(encoding="utf-8"), encoding="utf-8")
+                    except Exception:
+                        pass
+            db.rename_virtual_item_paths(str(dup), str(canonical))
+            try:
+                _shutil.rmtree(dup)
+                log.info("Removed duplicate movie folder: %s", dup.name)
+                removed += 1
+            except Exception as exc:
+                log.warning("Could not remove movie folder %s: %s", dup.name, exc)
+
+    log.info("merge_movie_duplicates: removed %d duplicate folder(s)", removed)
+    return removed
+
+
+def rename_messy_movie_folders() -> int:
+    """Rename movie folders with torrent-site prefixes / Cyrillic junk to their
+    canonical 'Title (Year)' name from the .nfo file. Returns count renamed."""
+    import shutil as _shutil
+
+    movies_base = Path(MEDIA_PATH) / "movies"
+    if not movies_base.is_dir():
+        return 0
+
+    renamed = 0
+    for folder in list(movies_base.iterdir()):
+        if not folder.is_dir():
+            continue
+        title, year, imdb_id = _movie_nfo_info(folder)
+        if not title or not year:
+            continue
+        import strm_generator as _sg
+        canonical_name = _sg._safe(f"{title} ({year})")
+        if not canonical_name or canonical_name == folder.name:
+            continue
+        new_folder = movies_base / canonical_name
+        if new_folder.exists():
+            log.info("Movie rename skipped: target %r already exists", canonical_name)
+            continue
+        try:
+            folder.rename(new_folder)
+            # Also rename the .strm and .nfo inside to match new folder name
+            old_strm = new_folder / f"{folder.name}.strm"
+            old_nfo = new_folder / f"{folder.name}.nfo"
+            if old_strm.exists():
+                old_strm.rename(new_folder / f"{canonical_name}.strm")
+            if old_nfo.exists():
+                old_nfo.rename(new_folder / f"{canonical_name}.nfo")
+            db.rename_virtual_item_paths(str(folder), str(new_folder))
+            log.info("Renamed movie folder %r → %r", folder.name, canonical_name)
+            renamed += 1
+        except Exception as exc:
+            log.warning("Could not rename movie %s → %s: %s", folder.name, canonical_name, exc)
+
+    log.info("rename_messy_movie_folders: %d folder(s) renamed", renamed)
+    return renamed
+
+
 def run_cleanup() -> None:
     log.info("Cleanup: starting strm scan in %s", MEDIA_PATH)
     run_id = db.insert_cleanup_run()
     scanned = repaired = deleted = unfixable = 0
 
-    # 0. Rename messy folder names to the canonical DB title.
+    # 0. Rename messy folder names to canonical titles (series + movies).
     rename_messy_series_folders()
+    rename_messy_movie_folders()
 
-    # 0b. Merge series folders that share the same IMDb ID (torrent-site prefixes,
+    # 0b. Merge duplicate folders (same IMDb ID, multiple folder names).
+    merge_movie_duplicates()
+
+    # 0c. Merge series folders that share the same IMDb ID (torrent-site prefixes,
     #    case variants, year/season suffixes all land as separate folders).
     merge_series_duplicates()
 
