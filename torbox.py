@@ -192,9 +192,12 @@ def _is_ready(item: dict) -> bool:
     return state in ("cached", "completed", "uploading", "metaDL_done")
 
 
-def wait_until_ready(info_hash: str) -> dict | None:
-    """Poll Torbox until the torrent reports completion or the timeout is reached."""
-    deadline = time.monotonic() + TORBOX_POLL_TIMEOUT_SEC
+def wait_until_ready(info_hash: str, timeout: int | None = None) -> dict | None:
+    """Poll Torbox until the torrent reports completion or the timeout is reached.
+    timeout defaults to TORBOX_POLL_TIMEOUT_SEC; pass a smaller value for
+    latency-sensitive paths like on-play re-materialization."""
+    limit = TORBOX_POLL_TIMEOUT_SEC if timeout is None else timeout
+    deadline = time.monotonic() + limit
     last_state: str | None = None
     while time.monotonic() < deadline:
         item = find_by_hash(info_hash)

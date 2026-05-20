@@ -785,10 +785,20 @@ def ui_api_poster(imdb_id: str):
 
 @app.get("/stream/<token>")
 def stream_redirect(token: str):
+    import time as _t
+    started = _t.monotonic()
+    ua = request.headers.get("User-Agent", "?")[:80]
+    rng = request.headers.get("Range", "-")
     url = catbox.materialize(token)
+    elapsed = _t.monotonic() - started
     if not url:
+        log.warning("stream: materialize FAILED token=%s ua=%r range=%s (%.1fs)",
+                    token, ua, rng, elapsed)
         abort(404)
-    return redirect(url, code=307)
+    log.info("stream: token=%s → CDN redirect (%.1fs) ua=%r range=%s",
+             token, elapsed, ua, rng)
+    # 302 is followed more reliably by some mobile players / ffmpeg than 307.
+    return redirect(url, code=302)
 
 
 @app.get("/ui/api/virtual-items")

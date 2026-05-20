@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 
 
 _URL_CACHE_TTL_SEC = 1800  # 30 minutes — well within TorBox CDN URL validity
+ON_PLAY_READY_TIMEOUT_SEC = 45  # max wait on-play before giving up (cached = seconds)
 _url_cache: dict[str, tuple[str, float]] = {}
 _url_cache_lock = threading.Lock()
 
@@ -123,7 +124,10 @@ def _materialize_locked(token: str) -> str | None:
         log.info("Catbox: re-adding %s (%s)", item["title"], item["info_hash"])
         try:
             torbox.add_magnet(item["magnet"])
-            live = torbox.wait_until_ready(item["info_hash"])
+            # On-play path: cached content becomes ready in seconds. Use a short
+            # timeout so a mobile client doesn't hang (and fall back to the
+            # backdrop) waiting on the default 10-minute poll window.
+            live = torbox.wait_until_ready(item["info_hash"], timeout=ON_PLAY_READY_TIMEOUT_SEC)
             if not live:
                 log.error("Catbox: torrent never became ready: %s", item["info_hash"])
                 return None
