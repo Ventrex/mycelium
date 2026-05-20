@@ -1471,8 +1471,8 @@ def ui_api_arr_import_test_radarr():
     if not auth.is_admin():
         return jsonify(error="admin required"), 403
     p = request.get_json(silent=True) or {}
-    url = p.get("url") or cfg.RADARR_URL
-    key = p.get("api_key") or cfg.RADARR_API_KEY
+    url = p.get("url") or settings.get("RADARR_URL", cfg.RADARR_URL)
+    key = p.get("api_key") or settings.get("RADARR_API_KEY", cfg.RADARR_API_KEY)
     if not url or not key:
         return jsonify(ok=False, error="url + api_key required"), 400
     import radarr
@@ -1484,8 +1484,8 @@ def ui_api_arr_import_test_sonarr():
     if not auth.is_admin():
         return jsonify(error="admin required"), 403
     p = request.get_json(silent=True) or {}
-    url = p.get("url") or cfg.SONARR_URL
-    key = p.get("api_key") or cfg.SONARR_API_KEY
+    url = p.get("url") or settings.get("SONARR_URL", cfg.SONARR_URL)
+    key = p.get("api_key") or settings.get("SONARR_API_KEY", cfg.SONARR_API_KEY)
     if not url or not key:
         return jsonify(ok=False, error="url + api_key required"), 400
     import sonarr

@@ -13,10 +13,27 @@ import time
 import db
 import processor
 import radarr
+import settings as _settings
 import sonarr
 import tmdb
 from config import RADARR_API_KEY, RADARR_URL, SONARR_API_KEY, SONARR_URL
 from webhook_parser import MediaRequest
+
+
+def _radarr_url() -> str:
+    return _settings.get("RADARR_URL", RADARR_URL) or ""
+
+
+def _radarr_key() -> str:
+    return _settings.get("RADARR_API_KEY", RADARR_API_KEY) or ""
+
+
+def _sonarr_url() -> str:
+    return _settings.get("SONARR_URL", SONARR_URL) or ""
+
+
+def _sonarr_key() -> str:
+    return _settings.get("SONARR_API_KEY", SONARR_API_KEY) or ""
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +53,8 @@ def _set(**kw):
 
 def import_radarr(only_monitored: bool = True, throttle_sec: float = 1.0) -> dict:
     """Pull all (monitored) Radarr movies and queue them for processing."""
-    if not (RADARR_URL and RADARR_API_KEY):
+    url, key = _radarr_url(), _radarr_key()
+    if not (url and key):
         raise RuntimeError("RADARR_URL/RADARR_API_KEY not configured")
 
     with _import_lock:
@@ -46,7 +64,7 @@ def import_radarr(only_monitored: bool = True, throttle_sec: float = 1.0) -> dic
               errors=0, started=time.time(), finished=None, message="Fetching from Radarr…")
 
     try:
-        movies = radarr.list_movies(RADARR_URL, RADARR_API_KEY)
+        movies = radarr.list_movies(url, key)
         if only_monitored:
             movies = [m for m in movies if m.get("monitored")]
         _set(total=len(movies), message=f"Importing {len(movies)} movie(s)")
@@ -89,7 +107,8 @@ def import_radarr(only_monitored: bool = True, throttle_sec: float = 1.0) -> dic
 
 def import_sonarr(only_monitored: bool = True) -> dict:
     """Pull all (monitored) Sonarr series and add them to monitored_series."""
-    if not (SONARR_URL and SONARR_API_KEY):
+    url, key = _sonarr_url(), _sonarr_key()
+    if not (url and key):
         raise RuntimeError("SONARR_URL/SONARR_API_KEY not configured")
 
     with _import_lock:
@@ -99,7 +118,7 @@ def import_sonarr(only_monitored: bool = True) -> dict:
               errors=0, started=time.time(), finished=None, message="Fetching from Sonarr…")
 
     try:
-        series = sonarr.list_series(SONARR_URL, SONARR_API_KEY)
+        series = sonarr.list_series(url, key)
         if only_monitored:
             series = [s for s in series if s.get("monitored")]
         _set(total=len(series), message=f"Importing {len(series)} series")
