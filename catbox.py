@@ -181,16 +181,17 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
 
     torbox_id = item["torbox_id"]
     rematerialized = False
+
+    # Fast path: cached torbox_id still live in TorBox.
     if torbox_id:
         live = torbox.find_by_id(torbox_id)
         if not live or not torbox._is_ready(live):
             torbox_id = None
             rematerialized = True
 
-    # Before spending a createtorrent slot, check whether the torrent is still
-    # in our TorBox library under its hash (TorBox keeps cached items ~30 days,
-    # so an "evicted" torbox_id may still resolve to a live torrent).
-    if not torbox_id:
+    # Second chance: torrent may still be in TorBox library under its hash
+    # even if the stored torbox_id was evicted (TorBox retains ~30 days).
+    if not torbox_id and item.get("info_hash"):
         existing = torbox.find_by_hash(item["info_hash"])
         if existing and torbox._is_ready(existing):
             torbox_id = existing["id"]
@@ -199,44 +200,39 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                      item["title"], torbox_id)
 
     if not torbox_id and not allow_readd:
-        # Scan/probe burst: don't pay the re-add + ready-wait cost just so a
-        # library scan can probe media info. The item stays playable — a real
-        # play request (single token, not a burst) will re-add it on demand.
         log.debug("Catbox: skipping re-add for %s during scan-burst probe", item["title"])
         return None
 
+    # Not in TorBox: search Torrentio fresh for the best currently-cached release.
+    # We never blindly re-add the stored magnet — if it left TorBox's cache the
+    # hash is likely dead. A live Torrentio search always finds something playable.
     if not torbox_id:
         rematerialized = True
-        log.info("Catbox: re-adding %s (%s)", item["title"], item["info_hash"])
+        log.info("Catbox: searching fresh cached release for %s", item["title"])
+        fresh = _search_best_cached_release(item)
+        if not fresh:
+            log.error("Catbox: no cached release found for %s — removing from library",
+                      item["title"])
+            _fail_put(token, _FAIL_COOLDOWN_SEC)
+            _remove_strm(item)
+            return None
+
+        new_hash, new_magnet = fresh
+        if new_hash != (item.get("info_hash") or "").lower():
+            log.info("Catbox: swapping %s → %s", item["title"], new_hash)
+            db.update_virtual_item_upgrade(token, new_hash, new_magnet, None, None)
+            item["info_hash"] = new_hash
+            item["file_id"] = None
+
         try:
-            torbox.add_magnet(item["magnet"], reason="catbox-replay")
-            # On-play path: cached content becomes ready in seconds. Use a short
-            # timeout so a mobile client doesn't hang (and fall back to the
-            # backdrop) waiting on the default 10-minute poll window.
-            live = torbox.wait_until_ready(item["info_hash"], timeout=ON_PLAY_READY_TIMEOUT_SEC)
+            torbox.add_magnet(new_magnet, reason="catbox-search")
+            live = torbox.wait_until_ready(new_hash, timeout=ON_PLAY_READY_TIMEOUT_SEC)
             if not live:
-                # Stored magnet is dead (no longer cached on TorBox). Re-query
-                # Torrentio for a fresh cached release and swap it in.
-                log.warning("Catbox: %s never became ready — searching for a fresh release",
-                            item["title"])
-                fresh = _find_fresh_cached_release(item)
-                if fresh:
-                    new_hash, new_magnet = fresh
-                    log.info("Catbox: swapping %s → fresh cached release %s",
-                             item["title"], new_hash)
-                    db.update_virtual_item_upgrade(token, new_hash, new_magnet, None, None)
-                    # New torrent has a different file layout — drop the stale file_id
-                    # so the file-resolution step below re-picks the right file.
-                    item["info_hash"] = new_hash
-                    item["file_id"] = None
-                    torbox.add_magnet(new_magnet, reason="catbox-fallback")
-                    live = torbox.wait_until_ready(new_hash, timeout=ON_PLAY_READY_TIMEOUT_SEC)
-                if not live:
-                    log.error("Catbox: no playable release found for %s — removing from library",
-                              item["title"])
-                    _fail_put(token, _FAIL_COOLDOWN_SEC)
-                    _remove_strm(item)
-                    return None
+                log.error("Catbox: fresh release not ready for %s — removing from library",
+                          item["title"])
+                _fail_put(token, _FAIL_COOLDOWN_SEC)
+                _remove_strm(item)
+                return None
             torbox_id = live["id"]
             db.update_virtual_torbox_id(token, torbox_id)
         except Exception as exc:
@@ -310,16 +306,12 @@ def _remove_strm(item: dict) -> None:
         log.warning("Catbox: could not remove .strm %s: %s", strm_path, exc)
 
 
-def _find_fresh_cached_release(item: dict) -> tuple[str, str] | None:
-    """The stored magnet is dead (no longer cached). Re-query Torrentio for the
-    same title and return (info_hash, magnet) of the best currently-cached
-    release, or None if nothing is cached right now.
-
-    Mirrors the lazy-registration logic in processor.py so the fallback honours
-    quality/language/remux preferences."""
+def _search_best_cached_release(item: dict) -> tuple[str, str] | None:
+    """Search Torrentio for the best currently-cached release for this item.
+    Returns (info_hash, magnet) of the top ranked cached result, or None."""
     imdb_id = item.get("imdb_id")
     if not imdb_id:
-        log.info("Catbox fallback: no imdb_id for %s — cannot re-search", item["title"])
+        log.info("Catbox search: no imdb_id for %s — cannot search", item["title"])
         return None
     try:
         import torrentio
@@ -340,12 +332,11 @@ def _find_fresh_cached_release(item: dict) -> tuple[str, str] | None:
             return None
         cached = debrid.check_cached_multi([s.info_hash for s in ranked]).get("torbox", set())
         for s in ranked:
-            if s.info_hash in cached and s.info_hash.lower() != (item.get("info_hash") or "").lower():
+            if s.info_hash in cached:
                 return s.info_hash.lower(), s.magnet
-        # If only the (dead) stored hash is "cached", nothing new to try.
         return None
     except Exception as exc:
-        log.warning("Catbox fallback: re-search failed for %s: %s", item["title"], exc)
+        log.warning("Catbox search: failed for %s: %s", item["title"], exc)
         return None
 
 
