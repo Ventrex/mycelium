@@ -330,19 +330,21 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             log.info("Catbox: %s still in library (id=%s) — no re-add needed",
                      item["title"], torbox_id)
 
-    # Third chance: item had a torbox_id before but wasn't found in the mylist (TorBox
-    # caps the list at 1000). Re-add the stored magnet directly — TorBox recognises
-    # cached hashes instantly and returns the existing entry without counting against
-    # the createtorrent quota (cached adds are free).
-    if not torbox_id and item.get("torbox_id") and item.get("magnet") and allow_readd:
+    # Third chance: use the stored magnet to add directly — covers both items that
+    # previously had a torbox_id (fell out of mylist top-1000) and freshly lazy-
+    # registered items (torbox_id=NULL, magnet already selected at request time).
+    if not torbox_id and item.get("magnet") and allow_readd:
         try:
-            log.info("Catbox: %s not in mylist top-1000, re-adding stored magnet", item["title"])
-            torbox.add_magnet(item["magnet"], reason="catbox-readd")
-            existing = torbox.find_by_hash(item["info_hash"], force_refresh=True)
+            log.info("Catbox: %s adding stored magnet", item["title"])
+            added = torbox.add_magnet(item["magnet"], reason="catbox-readd")
+            existing = added if added.get("id") and torbox._is_ready(added) else (
+                torbox.find_by_id(added["id"]) if added.get("id") else
+                torbox.find_by_hash(item["info_hash"], force_refresh=True)
+            )
             if existing and torbox._is_ready(existing):
                 torbox_id = existing["id"]
                 db.update_virtual_torbox_id(token, torbox_id)
-                log.info("Catbox: %s re-added via stored magnet (id=%s)", item["title"], torbox_id)
+                log.info("Catbox: %s added via stored magnet (id=%s)", item["title"], torbox_id)
         except Exception as exc:
             is_429 = "429" in str(exc)
             log.warning("Catbox: stored-magnet re-add failed for %s: %s", item["title"], exc)
