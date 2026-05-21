@@ -395,6 +395,23 @@ Plex sees `/data/library/movies/Inception (2010)/Inception (2010).mkv` as a regu
 
 ---
 
+## ⚠️ TorBox API rate limits
+
+TorBox enforces two rate limits on `POST /torrents/createtorrent`, both **per IP address** (not per API key):
+
+| Limit | Window | Notes |
+|---|---|---|
+| **60 requests** | per hour | Rolling window |
+| **10 requests** | per minute | Edge burst limit |
+
+All other endpoints are limited to **5 requests/second per IP**.
+
+**Important:** the limits are per IP, so all apps on the same machine (Decypharr, Radarr, Sonarr, TorBox Media Center, etc.) share the same quota. If you run other TorBox-connected services, stop them or account for their usage.
+
+In **Catbox mode with `CATBOX_LAZY_ADD=true`**, `createtorrent` is never called at add-time — only on first playback. Subsequent plays use the cached torrent ID directly, so normal single-user usage stays well within the limits.
+
+Mycelium persists the `createtorrent` call log in the DB so the guard counter survives container restarts. The TorBox tab in the dashboard shows current usage broken down by reason.
+
 ## ❓ FAQ
 
 <details>
