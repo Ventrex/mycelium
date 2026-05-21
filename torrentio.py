@@ -8,6 +8,7 @@ from config import (
     ALLOW_4K,
     AUDIO_LANGUAGE_PREFERENCE,
     EXCLUDE_CAM,
+    EXCLUDE_DV_P5,
     EXCLUDE_LANGUAGES,
     EXCLUDE_REMUX,
     MAX_SIZE_GB,
@@ -37,7 +38,12 @@ _QUALITY_PATTERNS = {
 _REMUX_RE = re.compile(r"\b(remux|bluray|blu-ray|bdremux)\b", re.IGNORECASE)
 _CAM_RE = re.compile(r"\b(cam|camrip|hdcam|ts|telesync|hdts|scr|screener|dvdscr|workprint|r5)\b", re.IGNORECASE)
 _WEBDL_RE = re.compile(r"\b(web-?dl|webrip|web)\b", re.IGNORECASE)
-_HEVC_RE = re.compile(r"\b(hevc|x265|h\.?265)\b", re.IGNORECASE)
+_HEVC_RE  = re.compile(r"\b(hevc|x265|h\.?265)\b", re.IGNORECASE)
+# Dolby Vision without an HDR10 base layer (Profile 5). The release name has
+# DV/DoVi but no HDR10 keyword alongside it. Profile 8 (DV + HDR10) is safe
+# and is NOT matched here.
+_DV_RE    = re.compile(r"\b(dovi|dolby[\s.]?vision|\.dv\.)\b", re.IGNORECASE)
+_HDR10_RE = re.compile(r"\bhdr10?\b", re.IGNORECASE)
 _SEEDERS_RE = re.compile(r"👤\s*(\d+)")
 _SIZE_RE = re.compile(r"💾\s*([\d.]+)\s*(GB|MB)", re.IGNORECASE)
 
@@ -193,6 +199,7 @@ def rank_streams(
     allow_4k = _settings.get("ALLOW_4K", ALLOW_4K) if override.get("allow_4k") is None else bool(override["allow_4k"])
     prefer_hevc = _settings.get("PREFER_HEVC", PREFER_HEVC) if override.get("prefer_hevc") is None else bool(override["prefer_hevc"])
     exclude_remux = _settings.get("EXCLUDE_REMUX", EXCLUDE_REMUX)
+    exclude_dv_p5 = _settings.get("EXCLUDE_DV_P5", EXCLUDE_DV_P5)
     exclude_cam = _settings.get("EXCLUDE_CAM", EXCLUDE_CAM)
     strict_cam = _settings.get("STRICT_NO_CAM", False)
     prefer_webdl = _settings.get("PREFER_WEBDL", PREFER_WEBDL)
@@ -204,6 +211,16 @@ def rank_streams(
     if not candidates:
         log.warning("No non-4K candidates; falling back to full list")
         candidates = list(streams)
+
+    if exclude_dv_p5:
+        def _is_dv_p5(s: TorrentioStream) -> bool:
+            blob = f"{s.name} {s.title}"
+            return bool(_DV_RE.search(blob)) and not bool(_HDR10_RE.search(blob))
+        filtered = [s for s in candidates if not _is_dv_p5(s)]
+        if filtered:
+            candidates = filtered
+        else:
+            log.warning("Only DV Profile 5 candidates available; allowing them")
 
     if exclude_remux:
         filtered = [s for s in candidates if not _REMUX_RE.search(f"{s.name} {s.title}")]
