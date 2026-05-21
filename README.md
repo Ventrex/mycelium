@@ -3,6 +3,7 @@
 <img src="assets/banner.svg" alt="myc3l1um: the hidden network beneath your media library" width="800"/>
 
 <p>
+  <img src="https://img.shields.io/badge/status-WIP-f59e0b.svg" alt="Work in progress"/>
   <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12"/>
   <img src="https://img.shields.io/badge/docker-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker ready"/>
   <img src="https://img.shields.io/badge/license-MIT-22d3ee.svg" alt="MIT licensed"/>
@@ -29,6 +30,18 @@
 </p>
 
 </div>
+
+---
+
+> [!WARNING]
+> **🚧 Work in progress — early days.** Mycelium is actively developed and not yet
+> battle-tested. Expect rough edges, breaking changes, and bugs. It's built and
+> primarily tested against one specific home setup (Synology NAS + Jellyfin + TorBox),
+> so things may not work out of the box in your environment yet. Defaults like server
+> IPs **must** be set via the setup wizard or `.env` — don't assume any value is
+> production-safe. Try it, kick the tires, and please
+> [open an issue](https://github.com/corveck79/mycelium/issues) if something breaks —
+> feedback at this stage is hugely helpful. Not recommended for unattended/critical use.
 
 ---
 
