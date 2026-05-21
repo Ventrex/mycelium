@@ -10,19 +10,25 @@ from pathlib import Path
 
 import requests
 
-from config import (
-    OPENSUBTITLES_API_KEY,
-    OPENSUBTITLES_LANGUAGES,
-    OPENSUBTITLES_USER_AGENT,
-)
+import settings as _settings
+from config import OPENSUBTITLES_USER_AGENT
 
 log = logging.getLogger(__name__)
 _BASE = "https://api.opensubtitles.com/api/v1"
 
 
+def _api_key() -> str:
+    return _settings.get("OPENSUBTITLES_API_KEY", "")
+
+
+def _languages() -> list[str]:
+    raw = _settings.get("OPENSUBTITLES_LANGUAGES", "")
+    return [l.strip().lower() for l in raw.split(",") if l.strip()]
+
+
 def _headers() -> dict:
     return {
-        "Api-Key": OPENSUBTITLES_API_KEY,
+        "Api-Key": _api_key(),
         "User-Agent": OPENSUBTITLES_USER_AGENT,
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -66,10 +72,12 @@ def fetch_for(strm_path: Path, imdb_id: str, media_type: str,
               season: int | None = None, episode: int | None = None) -> int:
     """Download configured-language subtitles next to a .strm file.
     Returns count of files written."""
-    if not OPENSUBTITLES_API_KEY or not OPENSUBTITLES_LANGUAGES:
+    api_key = _api_key()
+    languages = _languages()
+    if not api_key or not languages:
         return 0
     written = 0
-    for lang in OPENSUBTITLES_LANGUAGES:
+    for lang in languages:
         target = strm_path.with_suffix(f".{lang}.srt")
         if target.exists():
             continue
