@@ -17,7 +17,7 @@ const adminItems = [
 ];
 
 const helpItems = [
-  { to: '/docs/install-guide.html', label: 'Manual', icon: '📖', external: true },
+  { to: '/manual', label: 'Manual', icon: '📖' },
 ];
 
 export default function Layout() {
@@ -173,6 +173,7 @@ function Breadcrumb({ path }: { path: string }) {
     '/requests': 'My Requests',
     '/wanted': 'Wanted',
     '/admin': 'Admin',
+    '/manual': 'Manual',
     '/login': 'Sign in',
   };
   const title = map[path] || 'Mycelium';

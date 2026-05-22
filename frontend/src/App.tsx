@@ -22,6 +22,9 @@ export default function App() {
         <Route path="admin" element={
           <iframe src="/admin?embed=1" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />
         } />
+        <Route path="manual" element={
+          <iframe src="/docs/install-guide.html" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />
+        } />
         <Route path="*" element={<div className="text-center py-16 text-muted">Page not found</div>} />
       </Route>
     </Routes>
