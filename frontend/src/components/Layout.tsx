@@ -62,11 +62,6 @@ export default function Layout() {
           {showAdmin && (
             <SidebarSection title="Manage" items={adminItems} onClick={() => setDrawerOpen(false)} />
           )}
-          <SidebarSection
-            title=""
-            items={[{ to: '/settings', label: 'Settings', icon: '🛠' }]}
-            onClick={() => setDrawerOpen(false)}
-          />
         </nav>
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border text-xs text-muted">
           {session?.user ? (
@@ -75,7 +70,7 @@ export default function Layout() {
               <a href="/logout" className="hover:text-white">Log out</a>
             </div>
           ) : (
-            <a href="/app/login" className="hover:text-white">Sign in →</a>
+            <a href="/login" className="hover:text-white">Sign in →</a>
           )}
         </div>
       </aside>
@@ -103,13 +98,6 @@ export default function Layout() {
             </button>
             <Breadcrumb path={location.pathname} />
             <div className="ml-auto flex items-center gap-2">
-              <a
-                href="/ui"
-                className="text-xs text-muted hover:text-white transition px-3 py-1.5 rounded border border-border"
-                title="Open the original Mycelium dashboard"
-              >
-                Old UI
-              </a>
             </div>
           </div>
         </header>
@@ -127,7 +115,7 @@ function SidebarSection({
   onClick,
 }: {
   title: string;
-  items: { to: string; label: string; icon: string; exact?: boolean }[];
+  items: { to: string; label: string; icon: string; exact?: boolean; external?: boolean }[];
   onClick: () => void;
 }) {
   return (
@@ -137,24 +125,36 @@ function SidebarSection({
           {title}
         </div>
       )}
-      {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.exact}
-          onClick={onClick}
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-5 py-2 text-sm transition relative
-             ${isActive
-                ? 'text-white bg-accent/10 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent'
-                : 'text-muted hover:text-white hover:bg-card'
-              }`
-          }
-        >
-          <span className="text-base">{item.icon}</span>
-          <span>{item.label}</span>
-        </NavLink>
-      ))}
+      {items.map((item) =>
+        item.external ? (
+          <a
+            key={item.to}
+            href={item.to}
+            onClick={onClick}
+            className="flex items-center gap-3 px-5 py-2 text-sm transition relative text-muted hover:text-white hover:bg-card"
+          >
+            <span className="text-base">{item.icon}</span>
+            <span>{item.label}</span>
+          </a>
+        ) : (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.exact}
+            onClick={onClick}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-5 py-2 text-sm transition relative
+               ${isActive
+                  ? 'text-white bg-accent/10 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent'
+                  : 'text-muted hover:text-white hover:bg-card'
+                }`
+            }
+          >
+            <span className="text-base">{item.icon}</span>
+            <span>{item.label}</span>
+          </NavLink>
+        )
+      )}
     </div>
   );
 }
@@ -168,7 +168,6 @@ function Breadcrumb({ path }: { path: string }) {
     '/requests': 'My Requests',
     '/wanted': 'Wanted',
     '/admin': 'Admin',
-    '/settings': 'Settings',
     '/login': 'Sign in',
   };
   const title = map[path] || 'Mycelium';

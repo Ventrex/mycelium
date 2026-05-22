@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
 export default function Requests() {
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['my-requests'], queryFn: api.myRequests });
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => api.deleteRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-requests'] });
+    },
+  });
   if (isLoading) return <div className="text-muted">Loading…</div>;
   const items = data?.items || [];
   return (
@@ -23,7 +30,7 @@ export default function Requests() {
                 <th className="text-left py-2 px-3">Type</th>
                 <th className="text-left py-2 px-3">Status</th>
                 <th className="text-left py-2 px-3">Requested</th>
-                <th className="text-left py-2 px-3">Note</th>
+                <th className="text-right py-2 px-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -35,7 +42,17 @@ export default function Requests() {
                     <StatusPill status={r.status} />
                   </td>
                   <td className="py-2 px-3 text-muted text-xs">{r.created_at}</td>
-                  <td className="py-2 px-3 text-muted text-xs">{r.note || '—'}</td>
+                  <td className="py-2 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => { if (confirm(`Remove "${r.title}"?`)) deleteMut.mutate(r.id); }}
+                      disabled={deleteMut.isPending}
+                      className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                      title="Delete request"
+                    >
+                      x
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -34,6 +34,8 @@ export default function DetailModal({
       (w: WatchlistItem) => w.imdb_id === detail.imdb_id && w.media_type === detail.media_type,
     );
 
+  const libStatus = detail?.library_status as string | undefined;
+
   const [addStatus, setAddStatus] = useState<'idle' | 'adding' | 'added' | 'pending' | 'error'>(
     'idle',
   );
@@ -227,32 +229,17 @@ export default function DetailModal({
                 )}
 
                 <div className="flex flex-wrap gap-2 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => addMutation.mutate()}
+                  <LibraryButton
+                    libStatus={libStatus}
+                    addStatus={addStatus}
+                    mediaType={detail.media_type}
                     disabled={
-                      addStatus === 'adding' ||
-                      addStatus === 'added' ||
-                      addStatus === 'pending' ||
-                      (detail.media_type === 'tv' &&
-                        monitorMode === 'selected' &&
-                        selectedSeasons.length === 0)
+                      detail.media_type === 'tv' &&
+                      monitorMode === 'selected' &&
+                      selectedSeasons.length === 0
                     }
-                    className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60
-                                disabled:cursor-not-allowed font-semibold text-sm"
-                  >
-                    {addStatus === 'adding'
-                      ? 'Adding…'
-                      : addStatus === 'added'
-                      ? '✓ Added'
-                      : addStatus === 'pending'
-                      ? '⏳ Pending approval'
-                      : addStatus === 'error'
-                      ? 'Retry'
-                      : detail.media_type === 'tv'
-                      ? '+ Monitor series'
-                      : '+ Add to library'}
-                  </button>
+                    onAdd={() => addMutation.mutate()}
+                  />
                   <button
                     type="button"
                     onClick={() => watchlistMutation.mutate()}
@@ -380,6 +367,56 @@ export default function DetailModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function LibraryButton({
+  libStatus,
+  addStatus,
+  mediaType,
+  disabled,
+  onAdd,
+}: {
+  libStatus: string | undefined;
+  addStatus: string;
+  mediaType: string;
+  disabled: boolean;
+  onAdd: () => void;
+}) {
+  if (libStatus === 'available' || libStatus === 'success') {
+    return (
+      <button type="button" disabled className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold text-sm cursor-default">
+        In library
+      </button>
+    );
+  }
+  if (libStatus === 'wanted' || libStatus === 'upcoming' || libStatus === 'pending' || libStatus === 'failed') {
+    return (
+      <button type="button" disabled className="px-4 py-2 rounded-lg bg-yellow-600 text-white font-semibold text-sm cursor-default">
+        Wanted
+      </button>
+    );
+  }
+  const isbusy = addStatus === 'adding' || addStatus === 'added' || addStatus === 'pending';
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      disabled={isbusy || disabled}
+      className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed font-semibold text-sm"
+    >
+      {addStatus === 'adding'
+        ? 'Adding...'
+        : addStatus === 'added'
+        ? 'Added'
+        : addStatus === 'pending'
+        ? 'Pending approval'
+        : addStatus === 'error'
+        ? 'Retry'
+        : mediaType === 'tv'
+        ? '+ Monitor series'
+        : '+ Add to library'}
+    </button>
   );
 }
 

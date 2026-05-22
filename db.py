@@ -49,7 +49,7 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS requests (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT    NOT NULL,
-    imdb_id     TEXT    NOT NULL,
+    imdb_id     TEXT    NOT NULL UNIQUE,
     media_type  TEXT    NOT NULL,
     seasons     TEXT,
     status      TEXT    NOT NULL DEFAULT 'pending',
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS repair_items (
     created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_requests_imdb              ON requests(imdb_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_imdb_unique ON requests(imdb_id);
 CREATE INDEX IF NOT EXISTS idx_requests_status_created    ON requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_monitored_series_status    ON monitored_series(status);
 CREATE INDEX IF NOT EXISTS idx_wanted_status_attempts     ON wanted_episodes(status, attempt_count);
@@ -401,7 +401,10 @@ def insert_request(title: str, imdb_id: str, media_type: str, seasons: list[int]
     seasons_str = ",".join(str(s) for s in (seasons or []))
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO requests (title, imdb_id, media_type, seasons) VALUES (?, ?, ?, ?)",
+            "INSERT INTO requests (title, imdb_id, media_type, seasons) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(imdb_id) DO UPDATE SET "
+            "title=excluded.title, seasons=COALESCE(excluded.seasons, seasons), "
+            "updated_at=strftime('%Y-%m-%d %H:%M:%S', 'now')",
             (title, imdb_id, media_type, seasons_str or None),
         )
         conn.commit()
@@ -426,6 +429,47 @@ def get_recent(limit: int = 100) -> list[dict]:
             "SELECT * FROM requests ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def reconcile_wanted_movies() -> int:
+    """Mark wanted movies as success if they already have a virtual_item (strm)."""
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE requests SET status='success' "
+            "WHERE status='wanted' AND media_type='movie' "
+            "AND EXISTS (SELECT 1 FROM virtual_items v "
+            "WHERE v.imdb_id=requests.imdb_id AND v.media_type='movie')"
+        )
+        conn.commit()
+        return cur.rowcount
+
+
+def reconcile_wanted_episodes() -> int:
+    """Mark wanted episodes as found if a matching strm file exists in virtual_items."""
+    import re as _re
+    _EP_RE = _re.compile(r'[Ss](\d{1,2})[Ee](\d{1,3})')
+    with _connect() as conn:
+        vis = conn.execute(
+            "SELECT imdb_id, strm_path FROM virtual_items "
+            "WHERE media_type='series' AND strm_path IS NOT NULL AND imdb_id IS NOT NULL"
+        ).fetchall()
+        have: set[tuple[str, int, int]] = set()
+        for v in vis:
+            m = _EP_RE.search(v["strm_path"] or "")
+            if m:
+                have.add((v["imdb_id"], int(m.group(1)), int(m.group(2))))
+        if not have:
+            return 0
+        updated = 0
+        for imdb_id, season, episode in have:
+            cur = conn.execute(
+                "UPDATE wanted_episodes SET status='found' "
+                "WHERE imdb_id=? AND season=? AND episode=? AND status='wanted'",
+                (imdb_id, season, episode),
+            )
+            updated += cur.rowcount
+        conn.commit()
+        return updated
 
 
 # ── monitored_series ──────────────────────────────────────────────────────────
@@ -500,6 +544,24 @@ def get_wanted_episodes(max_attempts: int = 10) -> list[dict]:
             (max_attempts,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_series_folder_imdb_map() -> dict[str, str]:
+    """Map series folder names to imdb_id via virtual_items strm_path."""
+    import re
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT imdb_id, strm_path FROM virtual_items "
+            "WHERE media_type='series' AND imdb_id IS NOT NULL AND strm_path IS NOT NULL"
+        ).fetchall()
+    folder_map: dict[str, str] = {}
+    for r in rows:
+        parts = r["strm_path"].replace("\\", "/").split("/")
+        for i, p in enumerate(parts):
+            if p == "series" and i + 1 < len(parts):
+                folder_map[parts[i + 1].lower()] = r["imdb_id"]
+                break
+    return folder_map
 
 
 def get_all_wanted_episodes() -> list[dict]:

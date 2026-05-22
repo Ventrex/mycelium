@@ -30,7 +30,7 @@ async function http<T>(url: string, init: RequestInit = {}): Promise<T> {
   const resp = await fetch(url, { ...init, headers, credentials: 'same-origin' });
   if (resp.status === 401) {
     if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
-      window.location.href = '/app/login';
+      window.location.href = '/login';
     }
     throw new Error('unauthorized');
   }
@@ -137,6 +137,7 @@ export const api = {
   // Library / dashboard
   session: () => http<SessionInfo>('/ui/api/session'),
   stats: () => http<any>('/ui/api/stats'),
+  libraryMovies: () => http<{ items: any[] }>('/ui/api/library/movies'),
   recent: () => http<{ items: any[] }>('/ui/api/activity'),
   myRequests: () => http<{ items: any[] }>('/ui/api/user-requests'),
 
@@ -174,6 +175,8 @@ export const api = {
   failedRequests: () => http<{ items: any[] }>('/ui/api/requests/failed'),
   retryRequest: (id: number) =>
     http<{ ok: boolean; title?: string }>(`/ui/api/requests/${id}/retry`, { method: 'POST' }),
+  deleteRequest: (id: number) =>
+    http<{ ok: boolean }>(`/ui/api/requests/${id}/delete`, { method: 'POST' }),
 
   // Maintenance
   repairStrms: () =>

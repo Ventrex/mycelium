@@ -6,8 +6,6 @@ import Watchlist from './pages/Watchlist';
 import Library from './pages/Library';
 import Requests from './pages/Requests';
 import Wanted from './pages/Wanted';
-import Admin from './pages/Admin';
-import Settings from './pages/Settings';
 import Login from './pages/Login';
 
 export default function App() {
@@ -21,8 +19,9 @@ export default function App() {
         <Route path="search" element={<Search />} />
         <Route path="requests" element={<Requests />} />
         <Route path="wanted" element={<Wanted />} />
-        <Route path="admin" element={<Admin />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="admin" element={
+          <iframe src="/admin" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />
+        } />
         <Route path="*" element={<div className="text-center py-16 text-muted">Page not found</div>} />
       </Route>
     </Routes>

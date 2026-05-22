@@ -337,17 +337,7 @@
 
   <div class="tabs">
     <button class="tab-btn" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="discover">Discover</button>
-    <button class="tab-btn" data-tab="watchlist">Watchlist</button>
-    <button class="tab-btn" data-tab="requests">Requests <span class="badge-count">{{ requests | length }}</span></button>
-    <button class="tab-btn" data-tab="movies">Movies <span class="badge-count">{{ movies | length }}</span></button>
-    <button class="tab-btn" data-tab="series">Series <span class="badge-count">{{ monitored | length }}</span></button>
-    <button class="tab-btn" data-tab="wanted">Wanted <span class="badge-count">{{ wanted | selectattr('status', 'equalto', 'wanted') | list | length }}</span></button>
-    <button class="tab-btn" data-tab="search">Search</button>
-    <button class="tab-btn" data-tab="users">Users</button>
-    <button class="tab-btn" data-tab="torbox">TorBox</button>
-    <button class="tab-btn" data-tab="catbox">Catbox</button>
-    <button class="tab-btn" data-tab="overrides">Overrides</button>
+    <button class="tab-btn" data-tab="requests">Requests</button>
     <button class="tab-btn" data-tab="blacklist">Blacklist</button>
     <button class="tab-btn" data-tab="repair">Repair</button>
     <button class="tab-btn" data-tab="settings">Settings</button>
@@ -477,409 +467,20 @@
     </div>
   </div>
 
-  <!-- ── Discover ── -->
-  <div id="tab-discover" class="tab-pane">
-    <div class="discover-hero">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-        <input id="discover-search" class="search-bar" style="flex:1;font-size:15px"
-               placeholder="Search movies and series…" autocomplete="off">
-        <select id="discover-search-type" style="height:36px">
-          <option value="all">All</option>
-          <option value="movie">Movies only</option>
-          <option value="tv">Series only</option>
-        </select>
-      </div>
-      <div id="discover-providers" class="provider-strip"></div>
-    </div>
-    <div id="discover-search-results" class="discover-section" style="display:none">
-      <div class="section-hdr"><span class="section-title">Search results</span></div>
-      <div id="discover-search-grid" class="poster-grid"></div>
-    </div>
-    <div class="discover-section">
-      <div class="section-hdr">
-        <span class="section-title">🔥 Trending this week</span>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('trending-day','/ui/api/discover/trending?type=all&window=day','#dsc-trending')">Today</button>
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('trending-week','/ui/api/discover/trending?type=all&window=week','#dsc-trending')">Week</button>
-        </div>
-      </div>
-      <div id="dsc-trending" class="poster-grid"></div>
-    </div>
-    <div class="discover-section">
-      <div class="section-hdr">
-        <span class="section-title">⭐ Popular</span>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('pop-movies','/ui/api/discover/popular?type=movie','#dsc-popular')">Movies</button>
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('pop-tv','/ui/api/discover/popular?type=tv','#dsc-popular')">Series</button>
-        </div>
-      </div>
-      <div id="dsc-popular" class="poster-grid"></div>
-    </div>
-    <div class="discover-section">
-      <div class="section-hdr">
-        <span class="section-title">🎬 Now playing</span>
-        <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('now','/ui/api/discover/now-playing','#dsc-now')">Refresh</button>
-      </div>
-      <div id="dsc-now" class="poster-grid"></div>
-    </div>
-    <div class="discover-section">
-      <div class="section-hdr">
-        <span class="section-title">📅 Upcoming</span>
-        <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('upc','/ui/api/discover/upcoming','#dsc-upcoming')">Refresh</button>
-      </div>
-      <div id="dsc-upcoming" class="poster-grid"></div>
-    </div>
-    <div class="discover-section">
-      <div class="section-hdr">
-        <span class="section-title">🏆 Top rated</span>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('tr-movies','/ui/api/discover/top-rated?type=movie','#dsc-toprated')">Movies</button>
-          <button class="btn btn-secondary btn-sm" onclick="dscLoadCat('tr-tv','/ui/api/discover/top-rated?type=tv','#dsc-toprated')">Series</button>
-        </div>
-      </div>
-      <div id="dsc-toprated" class="poster-grid"></div>
-    </div>
-  </div>
-
-  <!-- ── Watchlist ── -->
-  <div id="tab-watchlist" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">My Watchlist</span>
-      <button class="btn btn-secondary btn-sm" onclick="loadWatchlist()">↻ Refresh</button>
-    </div>
-    <div id="watchlist-grid" class="poster-grid"></div>
-    <div id="watchlist-empty" class="dim" style="display:none;text-align:center;padding:40px">
-      No items in your watchlist yet. Add some from the Discover tab.
-    </div>
-  </div>
-
-  <!-- ── Users (admin) ── -->
-  <div id="tab-users" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">Users &amp; Requests</span>
-    </div>
-    <div class="card">
-      <div class="card-title">Pending requests</div>
-      <table class="data-table" id="user-requests-table">
-        <thead><tr><th>User</th><th>Title</th><th>Type</th><th>IMDB</th><th>Requested</th><th>Action</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Users</div>
-      <table class="data-table" id="users-table">
-        <thead><tr><th>Username</th><th>Role</th><th>Auto-approve</th><th>Enabled</th><th>Last login</th><th>Action</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Create user</div>
-      <div class="form-row">
-        <div class="field"><label>Username</label><input id="new-user-name"></div>
-        <div class="field"><label>Password</label><input id="new-user-pw" type="password"></div>
-        <div class="field"><label>Role</label>
-          <select id="new-user-role"><option value="user">user</option><option value="admin">admin</option></select>
-        </div>
-        <div class="field"><label>Auto-approve</label>
-          <select id="new-user-auto"><option value="0">no</option><option value="1">yes</option></select>
-        </div>
-        <div class="field"><label>&nbsp;</label><button class="btn btn-primary" onclick="createUser()">Create</button></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Detail modal (full screen overlay) -->
-  <div id="discover-modal" class="discover-modal" style="display:none" onclick="if(event.target===this)dscCloseModal()">
-    <div class="discover-modal-body">
-      <button class="discover-modal-close" onclick="dscCloseModal()">×</button>
-      <div id="discover-modal-content"></div>
-    </div>
-  </div>
-
   <!-- ── Requests ── -->
   <div id="tab-requests" class="tab-pane">
-    <div class="section-hdr"><span class="section-title">Manual Request</span></div>
-    <form method="post" action="/ui/submit">
-      <div class="form-row">
-        <div class="field"><label>IMDB ID</label><input name="imdb_id" placeholder="tt0293662" required pattern="tt\d{6,10}"></div>
-        <div class="field"><label>Type</label><select name="media_type"><option value="movie">Movie</option><option value="series">Series</option></select></div>
-        <div class="field"><label>Seasons</label><input name="seasons" placeholder="1 or 1,2,3" value="1"></div>
-        <div class="field"><label>&nbsp;</label><button type="submit" class="btn btn-primary">Add to TorBox</button></div>
-      </div>
-    </form>
-
-    <input type="text" class="search-bar" placeholder="Search requests…" data-filter="requests-table">
+    <div class="section-hdr">
+      <span class="section-title">All Requests</span>
+      <span class="dim" style="font-size:11px">All media requests in the system</span>
+    </div>
+    <input type="text" class="search-bar" placeholder="Search..." data-filter="requests-table">
     <div class="table-wrap">
       <table id="requests-table">
         <thead><tr>
-          <th class="sortable">Title</th><th>IMDB</th><th class="sortable">Type</th><th>Seasons</th>
-          <th class="sortable">Status</th><th>Quality</th><th>Source</th><th class="sortable">Added</th><th></th>
+          <th class="sortable">Title</th><th>IMDB</th><th>Type</th>
+          <th class="sortable">Status</th><th class="sortable">Added</th><th></th>
         </tr></thead>
-        <tbody>
-          {% for r in requests %}
-          <tr data-imdb="{{ r.imdb_id }}" data-type="{{ r.media_type }}">
-            <td><div class="title-cell"><span class="poster-placeholder" data-poster="{{ r.imdb_id }}" data-poster-type="{{ r.media_type }}"></span>{{ r.title }}</div></td>
-            <td><a href="https://www.imdb.com/title/{{ r.imdb_id }}" target="_blank">{{ r.imdb_id }}</a></td>
-            <td class="dim">{{ r.media_type }}</td>
-            <td class="dim">{{ r.seasons or '—' }}</td>
-            <td>
-              <span class="badge badge-{{ r.status }}">{{ r.status.replace('_',' ') }}</span>
-              {% if r.status in ('failed', 'rate_limited') and r.error %}
-              <span class="dim" style="display:block;font-size:10px;margin-top:3px;max-width:220px" title="{{ r.error }}">{{ r.error[:60] }}{% if r.error|length > 60 %}…{% endif %}</span>
-              {% endif %}
-            </td>
-            <td class="mono">{{ r.quality or '—' }}</td>
-            <td class="dim">{{ r.source or '—' }}</td>
-            <td class="dim">{{ r.created_at }}</td>
-            <td>
-              {% if r.status in ('failed', 'rate_limited') %}
-              <form method="post" action="/ui/retry-request/{{ r.id }}" style="display:inline">
-                <button class="btn btn-sm btn-secondary">↻ Retry</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}<tr><td colspan="9" class="empty">No requests yet</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Movies ── -->
-  <div id="tab-movies" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">Approved Movies</span>
-      <form method="post" action="/ui/sync-movies" style="display:inline">
-        <button class="btn btn-secondary btn-sm">↻ Sync Now</button>
-      </form>
-    </div>
-    <input type="text" class="search-bar" placeholder="Search movies…" data-filter="movies-table">
-    <div class="table-wrap">
-      <table id="movies-table">
-        <thead><tr>
-          <th class="sortable">Title</th><th>IMDB</th><th class="sortable">Status</th>
-          <th>Requested By</th><th class="sortable">Requested At</th><th></th>
-        </tr></thead>
-        <tbody>
-          {% for m in movies %}
-          <tr>
-            <td><div class="title-cell"><span class="poster-placeholder" data-poster="{{ m.imdb_id }}" data-poster-type="movie"></span>{{ m.title }}</div></td>
-            <td><a href="https://www.imdb.com/title/{{ m.imdb_id }}" target="_blank">{{ m.imdb_id }}</a></td>
-            <td>
-              {% if m.strm_found %}<span class="badge badge-available">✓ available</span>
-              {% elif m.status == 'processing' %}<span class="badge badge-processing">⟳ processing</span>
-              {% elif m.status == 'failed' %}<span class="badge badge-failed">✗ failed</span>
-              {% else %}<span class="badge badge-pending">⏳ pending</span>{% endif %}
-            </td>
-            <td class="dim">{{ m.requested_by or '—' }}</td>
-            <td class="dim">{{ (m.requested_at or '')[:10] }}</td>
-            <td>
-              {% if not m.strm_found %}
-              <form method="post" action="/ui/download-movie" style="display:inline">
-                <input type="hidden" name="imdb_id" value="{{ m.imdb_id }}">
-                <button class="btn btn-secondary btn-sm">Download</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}<tr><td colspan="6" class="empty">No approved movies — click Sync Now</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Series ── -->
-  <div id="tab-series" class="tab-pane">
-    <div class="section-hdr"><span class="section-title">Monitored Series</span></div>
-    <input type="text" class="search-bar" placeholder="Search series…" data-filter="series-table">
-    <div class="table-wrap">
-      <table id="series-table">
-        <thead><tr>
-          <th class="sortable">Title</th><th>IMDB</th><th>TMDB</th><th>Seasons</th>
-          <th class="sortable">Status</th><th class="sortable">Last Checked</th>
-        </tr></thead>
-        <tbody>
-          {% for s in monitored %}
-          <tr>
-            <td><div class="title-cell"><span class="poster-placeholder" data-poster="{{ s.imdb_id }}" data-poster-type="tv"></span>{{ s.title }}</div></td>
-            <td><a href="https://www.imdb.com/title/{{ s.imdb_id }}" target="_blank">{{ s.imdb_id }}</a></td>
-            <td class="dim">{{ s.tmdb_id or '—' }}</td>
-            <td class="dim">{{ s.seasons or '—' }}</td>
-            <td><span class="badge badge-{{ s.status }}">{{ s.status }}</span></td>
-            <td class="dim">{{ s.last_checked or 'never' }}</td>
-          </tr>
-          {% else %}<tr><td colspan="6" class="empty">No monitored series yet</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Wanted ── -->
-  <div id="tab-wanted" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">Wanted Episodes</span>
-      <span class="dim" style="font-size:11px">Retries every {{ config.MONITOR_INTERVAL_HOURS }}h · max {{ config.MAX_RETRY_ATTEMPTS }} attempts</span>
-      <form method="post" action="/ui/search-all-wanted" style="display:inline;margin-left:auto">
-        <button class="btn btn-secondary btn-sm">Search all wanted</button>
-      </form>
-    </div>
-    <input type="text" class="search-bar" placeholder="Search episodes…" data-filter="wanted-table">
-    <div class="table-wrap">
-      <table id="wanted-table">
-        <thead><tr>
-          <th class="sortable">Show</th><th class="sortable">S</th><th class="sortable">E</th>
-          <th class="sortable">Air Date</th><th class="sortable">Status</th>
-          <th>Attempts</th><th class="sortable">Last Try</th><th></th>
-        </tr></thead>
-        <tbody>
-          {% for ep in wanted %}
-          <tr>
-            <td>{{ ep.title }}</td>
-            <td class="mono">{{ "%02d" % ep.season }}</td>
-            <td class="mono">{{ "%02d" % ep.episode }}</td>
-            <td class="dim">{{ ep.air_date or '—' }}</td>
-            <td><span class="badge badge-{{ ep.status }}">{{ ep.status }}</span></td>
-            <td class="dim">{{ ep.attempt_count }}/{{ config.MAX_RETRY_ATTEMPTS }}</td>
-            <td class="dim">{{ (ep.last_attempted or '')[:16] }}</td>
-            <td>
-              {% if ep.status in ('wanted', 'not_aired') %}
-              <form method="post" action="/ui/search-episode" style="display:inline">
-                <input type="hidden" name="imdb_id" value="{{ ep.imdb_id }}">
-                <input type="hidden" name="title"   value="{{ ep.title }}">
-                <input type="hidden" name="season"  value="{{ ep.season }}">
-                <input type="hidden" name="episode" value="{{ ep.episode }}">
-                <button class="btn btn-secondary btn-sm">Search</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}<tr><td colspan="8" class="empty">No wanted episodes</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Search ── -->
-  <div id="tab-search" class="tab-pane">
-    <div class="card">
-      <div class="card-title">Manual Search & Pick</div>
-      <p class="dim" style="font-size:12px;margin-bottom:12px">
-        Search Zilean/Torrentio for an IMDB ID and pick exactly which release to add to TorBox.
-      </p>
-      <div class="form-row">
-        <div class="field"><label>IMDB ID</label><input id="search_imdb" name="search_imdb" placeholder="tt0293662" pattern="tt\d{6,10}"></div>
-        <div class="field"><label>Type</label>
-          <select id="search_type"><option value="movie">Movie</option><option value="series">Series</option></select>
-        </div>
-        <div class="field"><label>Season</label><input id="search_season" type="number" value="1" min="1" style="width:80px"></div>
-        <div class="field"><label>Episode</label><input id="search_episode" type="number" value="1" min="1" style="width:80px"></div>
-        <div class="field"><label>&nbsp;</label><button class="btn btn-primary" onclick="doSearch()">Search</button></div>
-      </div>
-      <div id="search-status" class="dim" style="font-size:12px;margin-bottom:10px"></div>
-      <div id="candidates" class="candidates-list"></div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Add by Magnet URL</div>
-      <form method="post" action="/ui/add-magnet">
-        <div class="form-row">
-          <div class="field" style="flex:1"><label>Magnet</label>
-            <input name="magnet" placeholder="magnet:?xt=urn:btih:…" style="min-width:400px;width:100%"></div>
-          <div class="field"><label>&nbsp;</label><button type="submit" class="btn btn-primary">Add</button></div>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- ── TorBox ── -->
-  <div id="tab-torbox" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">TorBox Library</span>
-      <button class="btn btn-secondary btn-sm" onclick="refreshTorbox()">↻ Refresh</button>
-    </div>
-    <input type="text" class="search-bar" placeholder="Search TorBox…" data-filter="torbox-table">
-    <div class="table-wrap">
-      <table id="torbox-table">
-        <thead><tr>
-          <th class="sortable">Name</th><th class="sortable">State</th><th class="sortable">Size</th>
-          <th>Files</th><th class="sortable">Added</th><th></th>
-        </tr></thead>
-        <tbody id="torbox-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Catbox ── -->
-  <div id="tab-catbox" class="tab-pane">
-    <div class="section-hdr">
-      <span class="section-title">Catbox · Lazy Materialization</span>
-      <div style="display:flex;gap:8px">
-        {% if config.CATBOX_MODE %}<span class="badge badge-active">enabled</span>{% else %}<span class="badge badge-disabled">disabled</span>{% endif %}
-        <form method="post" action="/ui/catbox-gc" style="display:inline">
-          <button class="btn btn-secondary btn-sm">↻ Release idle now</button>
-        </form>
-        <form method="post" action="/ui/backup-now" style="display:inline">
-          <button class="btn btn-secondary btn-sm">💾 Backup DB</button>
-        </form>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleBackupList()">📂 Restore</button>
-      </div>
-    </div>
-
-    <div id="backup-list" style="display:none;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">
-      <div class="section-title" style="margin-bottom:8px">DB Backups (newest first)</div>
-      <div id="backup-list-rows"><div class="dim" style="font-size:12px">Loading…</div></div>
-    </div>
-    <p class="dim" style="font-size:12px;margin-bottom:12px">
-      Items are virtual until you press play. Idle threshold: <b>{{ config.CATBOX_IDLE_MINUTES }} min</b> · GC interval: <b>{{ config.CATBOX_GC_INTERVAL_MINUTES }} min</b>.
-      {% if not config.CATBOX_MODE %}<br><b>To enable:</b> set <code>CATBOX_MODE=true</code> in .env and restart.{% endif %}
-    </p>
-    <input type="text" class="search-bar" placeholder="Search…" data-filter="catbox-table">
-    <div class="table-wrap">
-      <table id="catbox-table">
-        <thead><tr>
-          <th class="sortable">Title</th><th class="sortable">Type</th><th class="sortable">In TorBox</th>
-          <th class="sortable">Plays</th><th class="sortable">Last played</th><th>Created</th><th>Hash</th>
-        </tr></thead>
-        <tbody id="catbox-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ── Overrides ── -->
-  <div id="tab-overrides" class="tab-pane">
-    <div class="card">
-      <div class="card-title">Add / Update Show Override</div>
-      <p class="dim" style="font-size:12px;margin-bottom:10px">
-        Override global quality settings for a specific IMDB ID. Leave a field blank to inherit the global default.
-      </p>
-      <form method="post" action="/ui/show-override">
-        <div class="form-row">
-          <div class="field"><label>IMDB ID</label><input name="imdb_id" placeholder="tt0903747" required pattern="tt\d{6,10}"></div>
-          <div class="field"><label>Quality pref</label>
-            <input name="quality_preference" placeholder="2160p,1080p,720p" style="width:180px"></div>
-          <div class="field"><label>Allow 4K</label>
-            <select name="allow_4k"><option value="">inherit</option><option value="true">yes</option><option value="false">no</option></select>
-          </div>
-          <div class="field"><label>Prefer HEVC</label>
-            <select name="prefer_hevc"><option value="">inherit</option><option value="true">yes</option><option value="false">no</option></select>
-          </div>
-          <div class="field" style="flex:1"><label>Notes</label><input name="notes" placeholder="e.g. always 4K, hates remux" style="min-width:180px;width:100%"></div>
-          <div class="field"><label>&nbsp;</label><button class="btn btn-primary">Save</button></div>
-        </div>
-      </form>
-    </div>
-
-    <div class="section-hdr" style="margin-top:16px"><span class="section-title">Active Overrides</span></div>
-    <div class="table-wrap">
-      <table id="overrides-table">
-        <thead><tr>
-          <th>IMDB</th><th>Quality</th><th>4K</th><th>HEVC</th><th>Notes</th><th></th>
-        </tr></thead>
-        <tbody id="overrides-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        <tbody id="requests-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1067,11 +668,9 @@
     document.getElementById('tab-' + name)?.classList.add('active');
     document.querySelector('[data-tab="' + name + '"]')?.classList.add('active');
     location.hash = name;
-    if (name === 'torbox') refreshTorbox();
     if (name === 'overview') refreshOverview();
-    if (name === 'catbox') refreshCatbox();
+    if (name === 'requests') refreshRequests();
     if (name === 'blacklist') refreshBlacklist();
-    if (name === 'overrides') refreshOverrides();
     if (name === 'settings') refreshSettings();
   }
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1521,6 +1120,42 @@
     } catch(e) {
       body.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--red)">${e.message}</td></tr>`;
     }
+  }
+
+  // ── Requests ──
+  async function refreshRequests() {
+    const body = document.getElementById('requests-body');
+    body.innerHTML = '<tr><td colspan="6" class="empty">Loading...</td></tr>';
+    try {
+      const r = await fetch('/ui/api/requests/all');
+      const d = await r.json();
+      body.innerHTML = '';
+      const statusCls = {success:'color:var(--green)', wanted:'color:var(--amber)', upcoming:'color:var(--indigo)', failed:'color:var(--red)', pending:'color:var(--muted)'};
+      d.items.forEach(i => {
+        const st = i.status || 'pending';
+        body.innerHTML += `<tr>
+          <td>${i.title||'—'}</td>
+          <td class="mono" style="font-size:11px">${i.imdb_id||'—'}</td>
+          <td class="dim">${i.media_type||'—'}</td>
+          <td style="${statusCls[st]||''};font-weight:600;text-transform:capitalize">${st.replace('_',' ')}</td>
+          <td class="dim">${(i.created_at||'').slice(0,16)}</td>
+          <td>
+            <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)"
+                    onclick="deleteRequest(${i.id}, '${(i.title||'').replace(/'/g,"\\'")}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+      if (!d.items.length) body.innerHTML = '<tr><td colspan="6" class="empty">No requests</td></tr>';
+    } catch(e) {
+      body.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">${e.message}</td></tr>`;
+    }
+  }
+  async function deleteRequest(id, title) {
+    if (!confirm('Delete request "' + title + '"?')) return;
+    try {
+      await fetch('/ui/api/requests/' + id + '/delete', {method:'POST', headers:{'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content}});
+      refreshRequests();
+    } catch(e) { alert('Delete failed: ' + e.message); }
   }
 
   // ── Blacklist ──

@@ -519,7 +519,9 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
         return False
     except Exception as exc:
         log.exception("Unexpected error processing %s", req.title)
-        db.update_request(row_id, "failed", error=str(exc))
+        err_str = str(exc)
+        status = "upcoming" if "403" in err_str else "failed"
+        db.update_request(row_id, status, error=err_str)
         import retry_queue
         retry_queue.schedule(req, _retry_attempt)
         return False

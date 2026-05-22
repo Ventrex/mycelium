@@ -15,7 +15,9 @@
 <p>
   Self-hosted automation that turns watchlist clicks into Jellyfin-ready streams via
   <a href="https://torbox.app">TorBox</a> in about 30 seconds, with zero local storage.
-  Comes with a modern <strong>in-app discovery + request UI</strong> (no Seerr needed,
+  Uses <strong>Catbox lazy materialization</strong> by default: torrents are only added to
+  TorBox when you press play, and released after idle time. Library size is effectively
+  unlimited. Comes with a built-in <strong>discovery + request UI</strong> (no Seerr needed,
   but Seerr/Jellyseerr webhooks still work if you want them).
 </p>
 
@@ -56,19 +58,19 @@ from **TorBox**. No FUSE, no rclone, no local downloads.
                   ↓                                       ↓
        search Zilean + Torrentio  →  cache-check TorBox  →  pick the best release
                                           ↓
-                          Jellyfin-ready .strm + .nfo files
+                          .strm files with Catbox proxy URLs
                                           ↓
-                  (optional) Catbox lazy mode for huge libraries
+                  Jellyfin plays  →  /stream/<token>  →  TorBox CDN (on-demand)
 ```
 
-Built for the **Jellyfin + TorBox + Synology NAS** stack. No FUSE, no rclone, no Plex required (but supported).
+Built for the **Jellyfin + TorBox** stack. No FUSE, no rclone, no local downloads, no Plex required (but supported via WebDAV).
 
 ### Two UIs, one container
 
 | | Path | Purpose |
 |--|--|--|
-| **Modern SPA** | `/app/` | Netflix-style poster grids, per-service browsing (Netflix/Prime/Disney+/…), multi-user, watchlist, request approval, Radarr/Sonarr bulk import |
-| **Classic dashboard** | `/ui` | Full operations console: repair, blacklist, settings, logs, overrides. Keep this for power-user maintenance |
+| **SPA** | `/` | Netflix-style poster grids, per-service browsing, library overview, multi-user, watchlist, request management |
+| **Admin dashboard** | `/admin` | Operations console: overview, requests, blacklist, repair, settings, logs. Embedded as iframe within the SPA |
 
 ---
 
@@ -106,12 +108,13 @@ The name felt right. Mycelium.
 </details>
 
 <details open>
-<summary><b>🎨 Modern Discover SPA</b> <i>(at /app/)</i></summary>
+<summary><b>🎨 Discover + Library SPA</b></summary>
 
 - **Poster grids** for trending, popular, top rated, now playing, upcoming
 - **Per-service filtering**: Netflix, Prime Video, Disney+, HBO Max, Apple TV+, Videoland, NPO Plus, SkyShowtime (NL region by default)
 - **Live multi-search** across movies + series
-- **Detail modals** with cast, trailers, seasons, where-it-streams badges, recommendations
+- **Detail modals** with cast, trailers, seasons, where-it-streams badges, recommendations, library status indicator
+- **Library view** with movies (available/wanted/upcoming) and series (per-episode status with missing episodes highlighted)
 - **Watchlist** per user
 - **Multi-user** with optional admin approval flow and per-user auto-approve
 - **First-run bootstrap**: the first account you create becomes the admin
@@ -127,9 +130,9 @@ The name felt right. Mycelium.
 </details>
 
 <details>
-<summary><b>🪤 Catbox mode (lazy materialization)</b></summary>
+<summary><b>🪤 Catbox mode (lazy materialization) -- recommended, enabled by default</b></summary>
 
-Inspired by [elfhosted's CatBox](https://docs.elfhosted.com/app/catbox/). Items live in your library as virtual proxies; the torrent only enters TorBox when you press play, and leaves after `CATBOX_IDLE_MINUTES` of idle time. Stays compliant with TorBox's 30-day cache retention while supporting effectively unlimited library size.
+Inspired by [elfhosted's CatBox](https://docs.elfhosted.com/app/catbox/). Each `.strm` file contains a proxy URL (`/stream/<token>`) instead of a direct CDN link. The torrent is only added to TorBox when you actually press play, and automatically released after `CATBOX_IDLE_MINUTES` of idle time. This means your Jellyfin library can be effectively unlimited without hitting TorBox storage limits.
 
 ```mermaid
 sequenceDiagram
@@ -150,7 +153,6 @@ sequenceDiagram
 <details>
 <summary><b>🎯 Smart picks</b></summary>
 
-- **Per-show overrides**: per-IMDB quality, 4K and HEVC preferences.
 - **Audio language preference**: boosts releases matching your language(s).
 - **Auto-upgrade**: replaces 720p with cached 1080p or 2160p when available.
 - **Season-pack consolidation**: swaps *N* per-episode torrents for one cached pack.
@@ -181,13 +183,13 @@ sequenceDiagram
 <summary><b>🖥 UX</b></summary>
 
 - **Web-based setup wizard** on first launch (no `.env` editing required).
-- Polished dashboard at `/ui`: 11 tabs, sortable tables, TMDB posters, dark/light theme.
+- Admin dashboard at `/admin`: overview, requests, blacklist, repair, settings, logs. Dark/light theme.
 - **Manual search & pick**: see every Zilean/Torrentio candidate, pick exactly which to add.
 - **Runtime settings**: toggle Catbox mode, quality filters, etc. without restart.
 - **Live stats**: quality distribution, source win-rate, latency, retry queue, library orphans.
 - **Service health** dots in topbar.
 - **Discord + Telegram** notifications on success, failure, disk, deadman.
-- Keyboard shortcuts `1` to `9`, `0`.
+- Keyboard shortcuts in admin dashboard.
 
 </details>
 
@@ -213,7 +215,6 @@ sequenceDiagram
 ### Prerequisites
 - Docker + Docker Compose
 - A [TorBox](https://torbox.app) account (Essential plan or higher recommended)
-- [Jellyseerr](https://jellyseerr.dev) / [Overseerr](https://overseerr.dev) running
 - [Jellyfin](https://jellyfin.org) running
 
 That's it. Out of the box Mycelium uses [Torrentio](https://torrentio.strem.fun) for scraping, which is a public service with no self-hosting required.
@@ -231,7 +232,7 @@ cd mycelium
 docker compose up -d --build
 ```
 
-Open **`http://<your-nas>:8088/ui`** and the setup wizard walks you through:
+Open **`http://<your-nas>:8088`** and the setup wizard walks you through:
 
 1. TorBox API key (the one required thing).
 2. Jellyfin URL and API key.
@@ -243,8 +244,7 @@ Open **`http://<your-nas>:8088/ui`** and the setup wizard walks you through:
 
 Each connection step has a **Test** button so you find typos before you save. All values land in the runtime settings DB; you can re-run the wizard or edit individual settings via the Settings tab anytime.
 
-Then open **`http://<your-nas>:8088/app/`** for the modern Discover UI. The first
-account you create becomes the admin.
+The first account you create becomes the admin. The Discover UI is the landing page.
 
 **Seerr is optional.** If you set `SEERR_URL` + `SEERR_API_KEY`, the catchup +
 movie/series sync jobs will fetch approved Seerr requests on startup and every
@@ -296,8 +296,8 @@ The full reference lives in [`.env.example`](.env.example). Key knobs:
 | Variable | Default | Purpose |
 |---|---|---|
 | `TORBOX_API_KEY` | *(set via wizard)* | From [torbox.app](https://torbox.app) → Settings → API |
-| `CATBOX_MODE` | `false` | Lazy materialization (recommended once stable) |
-| `CATBOX_HOST` | `http://10.0.0.10:8088` | Externally reachable URL for proxy strm URLs |
+| `CATBOX_MODE` | `true` | Lazy materialization (recommended) |
+| `CATBOX_HOST` | *(set via wizard)* | Externally reachable URL for proxy strm URLs |
 | `CATBOX_IDLE_MINUTES` | `60` | Idle time before a torrent is released from TorBox |
 | `QUALITY_PREFERENCE` | `1080p,2160p,720p` | Comma-separated preference order |
 | `ALLOW_4K` | `true` | Allow 2160p releases |
@@ -408,7 +408,7 @@ All other endpoints are limited to **5 requests/second per IP**.
 
 **Important:** the limits are per IP, so all apps on the same machine (Decypharr, Radarr, Sonarr, TorBox Media Center, etc.) share the same quota. If you run other TorBox-connected services, stop them or account for their usage.
 
-In **Catbox mode with `CATBOX_LAZY_ADD=true`**, `createtorrent` is never called at add-time — only on first playback. Subsequent plays use the cached torrent ID directly, so normal single-user usage stays well within the limits.
+In **Catbox mode** (default), `createtorrent` is only called on first playback, not at add-time. Subsequent plays use the cached torrent ID directly, so normal single-user usage stays well within the limits.
 
 Mycelium persists the `createtorrent` call log in the DB so the guard counter survives container restarts. The TorBox tab in the dashboard shows current usage broken down by reason.
 
@@ -441,13 +441,11 @@ Plex doesn't support `.strm` natively, but the optional WebDAV server (see above
 <details>
 <summary><b>What's the difference between fixed strm and Catbox mode?</b></summary>
 
-In **fixed strm** mode, each `.strm` contains a direct TorBox `requestdl` CDN URL. Simple, works even when this service is down, but URLs expire after about 24 hours. If you don't re-add the torrent frequently, links rot.
+In **fixed strm** mode, each `.strm` contains a direct TorBox CDN URL. Simple, works even when Mycelium is down, but URLs expire after about 24 hours.
 
-In **Catbox mode** (`CATBOX_MODE=true`), each `.strm` contains a proxy URL pointing at `/stream/<token>`. On playback Mycelium fetches a fresh URL on demand, re-adding the torrent to TorBox if it was previously released. No URL rot, library size effectively unlimited, but playback requires Mycelium to be up.
+In **Catbox mode** (default, `CATBOX_MODE=true`), each `.strm` contains a proxy URL (`/stream/<token>`). On playback Mycelium fetches a fresh CDN URL on demand, re-adding the torrent to TorBox if needed. No URL rot, library size effectively unlimited, but playback requires Mycelium to be running.
 
-**Migrating from fixed to Catbox:** enable `CATBOX_MODE` + `CATBOX_LAZY_ADD`, then Admin → Maintenance → **Repair broken strm files**. The repair scans all movie `.strm` files, relinks any with expired direct URLs to a catbox proxy token (or requeues for reprocessing if no token exists yet).
-
-Most people should enable Catbox mode once they trust the setup.
+Catbox mode is the recommended and default mode.
 </details>
 
 <details>
@@ -461,7 +459,7 @@ For ongoing new-content requests Mycelium's built-in SPA or Seerr webhook is the
 <details>
 <summary><b>I made a bad request and now it's stuck retrying. How do I stop it?</b></summary>
 
-Settings tab → **Blacklist** → add the offending hash, or just `DELETE` the entry from `retry_queue` table. The blacklist auto-fills after `BLACKLIST_FAIL_THRESHOLD` consecutive failures (default 3).
+Admin → **Blacklist** tab → add the offending hash, or just `DELETE` the entry from `retry_queue` table. The blacklist auto-fills after `BLACKLIST_FAIL_THRESHOLD` consecutive failures (default 3).
 </details>
 
 <details>
@@ -475,24 +473,19 @@ Probably. Memory footprint is about 150 MB. Disk requirements are minimal (`.str
 
 Most likely the `./data` volume isn't being mounted. Check `docker compose config` and verify `./data:/data`. The DB lives at `/data/requests.db` and `.strm` files at `/data/media`. With the volume preserved, nothing should be lost.
 
-If the DB itself is corrupted: Overview → **🚑 Recovery wizard** rebuilds the DB by scanning the `.strm` map on disk.
+If the DB itself is corrupted: Admin → Overview → **Recovery wizard** rebuilds the DB by scanning the `.strm` map on disk.
 </details>
 
 ---
 
 ## 🗺 Roadmap
 
-- [x] ~~Multi-debrid productionised (RealDebrid as actual fallback)~~. Movies and season-pack series done.
-- [x] ~~Plex compatibility via WebDAV~~. Mount via davfs2 on DSM host.
-- [x] ~~Prometheus metrics export~~. Exposed at `/metrics`.
-- [x] ~~Web-based one-click installer~~. Visit `/ui` on first run.
-- [x] ~~Light official theme~~. Toggle from the topbar icon.
-- [x] ~~Per-episode RealDebrid fallback~~. Movies, season packs and per-episode all go through RD when TorBox misses.
-- [x] ~~Optional auth for the dashboard~~. Password login, trusted-proxy headers, or native OIDC.
-- [x] ~~Native OIDC support~~. Works with Authelia, Authentik, Keycloak, Google, Auth0, Okta. Opt-in.
-- [x] ~~Radarr / Sonarr bulk import~~. Admin panel with live progress, reads settings from DB.
-- [x] ~~Repair broken .strm files~~. Admin → Maintenance → one-click fix for expired direct CDN URLs.
-- [x] ~~Failed request visibility + manual retry~~. Requests page shows failures with per-row retry button.
+See [open issues](https://github.com/corveck79/mycelium/issues) for current work.
+
+**Completed:**
+multi-debrid fallback (RealDebrid), Plex via WebDAV, Prometheus metrics, setup wizard,
+dark/light theme, OIDC/SSO, Radarr/Sonarr bulk import, strm repair, failed request retry,
+library status in Discover, request management with delete, episode reconciliation.
 
 ---
 

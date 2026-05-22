@@ -26,7 +26,7 @@ export default function Login() {
           </div>
         )}
         <form method="post" action="/login" className="space-y-3">
-          <input type="hidden" name="next" value="/app/" />
+          <input type="hidden" name="next" value="/" />
           <input
             type="hidden"
             name="csrf_token"

@@ -113,7 +113,7 @@ def login_submit():
     from flask import session as _session
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    nxt = request.form.get("next") or "/ui"
+    nxt = request.form.get("next") or "/"
     if auth.attempt_login(username, password):
         _session["user"] = username
         return redirect(nxt)
@@ -443,22 +443,23 @@ def torbox_webhook():
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
-@app.get("/ui")
+@app.get("/admin")
 def ui_dashboard():
     import settings as _settings
     if not _settings.get("SETUP_COMPLETE", False):
         return redirect(url_for("setup_wizard"))
     return render_template(
         "ui.html",
-        requests=db.get_recent(100),
-        monitored=db.get_all_monitored_series(),
-        wanted=db.get_all_wanted_episodes(),
-        movies=db.get_media_items("movie"),
         repair_items=db.get_repair_items(200),
         last_cleanup=db.get_last_cleanup_run(),
         activity=db.get_activity(50),
         config=cfg,
     )
+
+
+@app.get("/ui")
+def ui_redirect():
+    return redirect("/admin", code=301)
 
 
 # ── Setup wizard ──────────────────────────────────────────────────────────────
@@ -1101,6 +1102,12 @@ def ui_api_retry_queue():
     return jsonify(items=db.get_pending_retries())
 
 
+@app.get("/ui/api/requests/all")
+def ui_api_all_requests():
+    rows = db.get_recent(5000)
+    return jsonify(items=rows)
+
+
 @app.get("/ui/api/requests/failed")
 def ui_api_failed_requests():
     rows = [r for r in db.get_recent(500) if r.get("status") == "failed"]
@@ -1122,6 +1129,17 @@ def ui_api_retry_request(row_id: int):
     threading.Thread(target=processor.process, args=(media_request,),
                      name=f"retry-{r['imdb_id']}", daemon=True).start()
     return jsonify(ok=True, title=r["title"])
+
+
+@app.post("/ui/api/requests/<int:row_id>/delete")
+@_csrf.exempt
+def ui_api_delete_request(row_id: int):
+    with db._connect() as conn:
+        cur = conn.execute("DELETE FROM requests WHERE id=?", (row_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify(error="not found"), 404
+    return jsonify(ok=True)
 
 
 @app.get("/ui/api/torbox-usage")
@@ -1253,6 +1271,18 @@ def ui_api_discover_details():
     detail = tmdb.details(media, tmdb_id, region=region)
     if not detail:
         return jsonify(error="not found"), 404
+    imdb_id = detail.get("imdb_id")
+    if imdb_id:
+        vi = db.get_virtual_items_by_imdb(imdb_id)
+        if vi:
+            detail["library_status"] = "available"
+        else:
+            with db._connect() as conn:
+                row = conn.execute(
+                    "SELECT status FROM requests WHERE imdb_id=?", (imdb_id,)
+                ).fetchone()
+            if row:
+                detail["library_status"] = row["status"]
     return jsonify(detail)
 
 
@@ -1408,6 +1438,7 @@ def ui_api_wanted_movies():
 
 
 @app.post("/ui/api/wanted-recheck")
+@_csrf.exempt
 def ui_api_wanted_recheck():
     def _run():
         upgrader.recheck_wanted()
@@ -1428,23 +1459,69 @@ def ui_search_all_wanted():
 
 @app.get("/ui/api/wanted-episodes")
 def ui_api_wanted_episodes():
+    db.reconcile_wanted_episodes()
     return jsonify(items=db.get_all_wanted_episodes())
+
+
+@app.get("/ui/api/library/movies")
+def ui_api_library_movies():
+    """Return all movie requests with status info, reconciling stale wanted status."""
+    db.reconcile_wanted_movies()
+    rows = db.get_recent(10000)
+    seen = set()
+    items = []
+    for r in rows:
+        if r.get("media_type") != "movie":
+            continue
+        imdb = r.get("imdb_id", "")
+        if imdb in seen:
+            continue
+        seen.add(imdb)
+        items.append({
+            "title": r.get("title") or "Unknown",
+            "imdb_id": imdb,
+            "quality": r.get("quality"),
+            "status": r.get("status"),
+            "source": r.get("source"),
+            "created_at": r.get("created_at"),
+        })
+    return jsonify(items=items)
 
 
 @app.get("/ui/api/library/series-episodes")
 def ui_api_library_series_episodes():
-    """Return available episodes per series by scanning the media folder."""
+    """Return available episodes per series with wanted info."""
+    db.reconcile_wanted_episodes()
     import re as _re
     from pathlib import Path as _Path
     _EP_RE = _re.compile(r'[Ss](\d{1,2})[Ee](\d{1,3})')
     series_dir = _Path(cfg.MEDIA_PATH) / "series"
+
+    folder_imdb = db.get_series_folder_imdb_map()
+
+    all_monitored = db.get_all_monitored_series()
+    mon_by_title: dict[str, dict] = {}
+    for s in all_monitored:
+        mon_by_title[s["title"].lower()] = s
+
+    wanted_eps = db.get_all_wanted_episodes()
+    wanted_by_imdb: dict[str, list[dict]] = {}
+    for ep in wanted_eps:
+        if ep.get("status") != "wanted":
+            continue
+        wanted_by_imdb.setdefault(ep["imdb_id"], []).append(ep)
+
+    all_eps_by_imdb: dict[str, list[dict]] = {}
+    for ep in wanted_eps:
+        all_eps_by_imdb.setdefault(ep["imdb_id"], []).append(ep)
+
     out = []
     if not series_dir.is_dir():
         return jsonify(series=[])
     for show in sorted(series_dir.iterdir()):
         if not show.is_dir():
             continue
-        seasons = []
+        seasons_map: dict[int, list[int]] = {}
         for season_dir in sorted(show.iterdir()):
             if not season_dir.is_dir():
                 continue
@@ -1458,9 +1535,48 @@ def ui_api_library_series_episodes():
                 if m:
                     episodes.append(int(m.group(2)))
             if episodes:
-                seasons.append({"season": s_num, "episodes": sorted(set(episodes))})
-        if seasons:
-            out.append({"title": show.name, "seasons": seasons})
+                seasons_map[s_num] = sorted(set(episodes))
+
+        folder_lower = show.name.lower()
+        clean = _re.sub(r'\s*\(\d{4}\)\s*$', '', folder_lower)
+
+        imdb_id = folder_imdb.get(folder_lower) or folder_imdb.get(clean)
+        if not imdb_id:
+            mon = mon_by_title.get(folder_lower) or mon_by_title.get(clean)
+            if not mon:
+                for title, s in mon_by_title.items():
+                    if title.startswith(clean) or clean.startswith(title):
+                        mon = s
+                        break
+            imdb_id = mon["imdb_id"] if mon else None
+
+        missing_eps = wanted_by_imdb.get(imdb_id, []) if imdb_id else []
+        missing = [{"season": ep["season"], "episode": ep["episode"]} for ep in missing_eps]
+
+        for m in missing:
+            if m["season"] not in seasons_map:
+                seasons_map[m["season"]] = []
+
+        season_years: dict[int, str] = {}
+        if imdb_id and imdb_id in all_eps_by_imdb:
+            for ep in all_eps_by_imdb[imdb_id]:
+                s = ep["season"]
+                ad = ep.get("air_date") or ""
+                if ad and s not in season_years:
+                    season_years[s] = ad[:4]
+
+        seasons = [
+            {"season": s, "episodes": eps, "year": season_years.get(s, "")}
+            for s, eps in sorted(seasons_map.items())
+        ]
+
+        if seasons or missing:
+            out.append({
+                "title": show.name,
+                "imdb_id": imdb_id,
+                "seasons": seasons,
+                "missing": missing,
+            })
     return jsonify(series=out)
 
 
@@ -1635,7 +1751,7 @@ def _spa_index():
             "<h1>Mycelium SPA not built</h1>"
             "<p>Run <code>cd frontend && npm install && npm run build</code> "
             "or rebuild the Docker image. The classic UI is at "
-            "<a href='/ui'>/ui</a>.</p>"
+            "<a href='/admin'>/admin</a>.</p>"
         ), 503
     with open(index_path, encoding="utf-8") as f:
         html = f.read()
@@ -1645,6 +1761,14 @@ def _spa_index():
         f'<meta name="csrf-token" content="{token}" />',
     )
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/")
+def root_index():
+    import settings as _settings
+    if not _settings.get("SETUP_COMPLETE", False):
+        return redirect(url_for("setup_wizard"))
+    return _spa_index()
 
 
 @app.get("/app")
@@ -1660,8 +1784,19 @@ def app_assets(filename: str):
 
 @app.get("/app/<path:subpath>")
 def app_catchall(subpath: str):
-    # Serve static files from the build dir if they exist; otherwise serve the
-    # SPA index so React Router can take over the route.
+    full = _os.path.join(_SPA_DIR, subpath)
+    if _os.path.isfile(full):
+        return _send(_SPA_DIR, subpath)
+    return _spa_index()
+
+
+@app.get("/assets/<path:filename>")
+def root_assets(filename: str):
+    return _send(_SPA_ASSET_DIR, filename)
+
+
+@app.get("/<path:subpath>")
+def root_catchall(subpath: str):
     full = _os.path.join(_SPA_DIR, subpath)
     if _os.path.isfile(full):
         return _send(_SPA_DIR, subpath)
