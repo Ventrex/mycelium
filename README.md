@@ -74,19 +74,7 @@ Built for the **Jellyfin + TorBox** stack. Plex supported via optional WebDAV.
 
 ## 🌱 Why Mycelium?
 
-It started with Real-Debrid quietly filtering "infringing_file" content overnight. No announcement, no migration path. 2,559 of 3,564 cached torrents gone. The Plex library was still there, full of posters and metadata, but every second item threw a "file not available" error when you tried to play it.
-
-The switch to TorBox seemed straightforward. It wasn't.
-
-After migrating the stack, Sonarr triggered a full missing-episode search across thousands of series episodes. Decypharr, configured with 100 workers per debrid, started hammering the FUSE mount with 200 concurrent I/O operations. On spinning HDDs, that's a death sentence. Load hit 165. CPU was at 0.1%. I/O wait was at 97.7%. The NAS needed a hard power cycle to recover.
-
-After throttling workers to 5 and restarting, a new problem surfaced: 123 downloads stuck on `pausedUP`, nothing importing into Sonarr. Three days of debugging `rshared` vs `rslave` mount flags led to the same conclusion: Synology's kernel 4.4 doesn't propagate FUSE mounts reliably into Docker containers. Sonarr could list the directory but couldn't read the files. The import step was broken at the OS level, unfixable by configuration.
-
-TMC was the next attempt. No FUSE, just `.strm` files. It worked until restart, when it wiped the entire library and crashed mid-rebuild on items with missing metadata. No visibility, no repair path.
-
-What started as a simple 100-line webhook to catch a Seerr approval and add a torrent to TorBox quietly grew. At some point it stopped being a webhook and became something else.
-
-The name felt right. Mycelium.
+The existing debrid-to-media-server toolchain kept breaking: Real-Debrid purged content without warning, FUSE mounts don't survive Synology's kernel, and the strm-based alternatives wiped libraries on restart with no way to diagnose why. Mycelium grew out of a 100-line webhook that kept needing one more fix. It replaces the Sonarr/Radarr/Prowlarr/Bazarr/Seerr/rclone/FUSE stack with a single container that writes `.strm` files directly, no kernel-level mounts needed.
 
 > *Mycelium is the network of fungal threads beneath every forest. It connects the trees and keeps them alive. The mushroom is the only part you see.*
 
