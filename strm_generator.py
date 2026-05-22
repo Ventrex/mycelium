@@ -159,7 +159,7 @@ def _write_nfo(strm_path: Path, imdb_id: str | None, tmdb_id: int | None = None,
         return
     m = _YEAR_RE.search(strm_path.parent.name)
     year = int(m.group(1)) if m else None
-    title = _YEAR_RE.sub("", strm_path.parent.name).strip() if m else strm_path.parent.name
+    title = _YEAR_RE.sub("", strm_path.parent.name).replace("()", "").strip() if m else strm_path.parent.name
 
     if media_type == "movie":
         year_tag = f"\n  <year>{year}</year>" if year else ""
