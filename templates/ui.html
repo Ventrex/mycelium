@@ -365,6 +365,7 @@
     <button class="tab-btn" data-tab="blacklist">Blacklist</button>
     <button class="tab-btn" data-tab="maintenance">Maintenance</button>
     <button class="tab-btn" data-tab="settings">Settings</button>
+    <button class="tab-btn" data-tab="users">Users</button>
     <button class="tab-btn" data-tab="logs">Logs</button>
   </div>
 
@@ -651,6 +652,60 @@
         (trending, popular, per-service top lists) and queues new items.
       </p>
       <button type="button" class="btn btn-primary btn-sm" onclick="autoAddNow()">▶ Run auto-add now</button>
+    </div>
+  </div>
+
+  <!-- ── Users ── -->
+  <div id="tab-users" class="tab-pane">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Create user</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+          <div class="field">
+            <label>Username</label>
+            <input id="new-user-name" placeholder="username" style="width:140px">
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input id="new-user-pw" type="password" placeholder="min 4 chars" style="width:140px">
+          </div>
+          <div class="field">
+            <label>Role</label>
+            <select id="new-user-role" style="width:100px">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Auto-approve</label>
+            <select id="new-user-auto" style="width:80px">
+              <option value="0">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="createUser()">Create</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Pending requests</div>
+        <div class="table-wrap">
+          <table id="user-requests-table">
+            <thead><tr><th>User</th><th>Title</th><th>Type</th><th>IMDb</th><th>Date</th><th>Actions</th></tr></thead>
+            <tbody><tr><td colspan="6" class="dim">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">All users</div>
+      <div class="table-wrap">
+        <table id="users-table">
+          <thead><tr><th>Username</th><th>Role</th><th>Auto-approve</th><th>Enabled</th><th>Last login</th><th>Actions</th></tr></thead>
+          <tbody><tr><td colspan="6" class="dim">Loading...</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
