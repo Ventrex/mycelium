@@ -62,9 +62,9 @@ export const api = {
   onTheAir: () => http<{ results: TmdbItem[] }>('/ui/api/discover/on-the-air'),
   providers: (type: MediaType = 'movie') =>
     http<{ providers: Provider[] }>(`/ui/api/discover/providers?type=${type}`),
-  byProvider: (type: MediaType, providerId: number) =>
+  byProvider: (type: MediaType, providerId: number, sortBy?: string) =>
     http<{ results: TmdbItem[] }>(
-      `/ui/api/discover/by-provider?type=${type}&provider_id=${providerId}`,
+      `/ui/api/discover/by-provider?type=${type}&provider_id=${providerId}${sortBy ? `&sort_by=${sortBy}` : ''}`,
     ),
   details: (type: MediaType, id: number) =>
     http<TmdbDetail>(`/ui/api/discover/details?type=${type}&id=${id}`),
@@ -134,12 +134,27 @@ export const api = {
   deleteUser: (id: number) =>
     http<{ ok: boolean }>(`/ui/api/users/${id}/delete`, { method: 'POST' }),
 
+  // Account
+  changePassword: (current: string, password: string) =>
+    http<{ ok: boolean; error?: string }>('/ui/api/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ current, password }),
+    }),
+
+  // Region
+  setRegion: (region: string) =>
+    http<{ ok: boolean; region: string }>('/ui/api/me/region', {
+      method: 'POST',
+      body: JSON.stringify({ region }),
+    }),
+
   // Library / dashboard
   session: () => http<SessionInfo>('/ui/api/session'),
   stats: () => http<any>('/ui/api/stats'),
+  libraryStatusMap: () => http<Record<string, string>>('/ui/api/library/status-map'),
   libraryMovies: () => http<{ items: any[] }>('/ui/api/library/movies'),
   recent: () => http<{ items: any[] }>('/ui/api/activity'),
-  myRequests: () => http<{ items: any[] }>('/ui/api/user-requests'),
+  myRequests: () => http<{ items: any[] }>('/ui/api/user-requests?mine=1'),
 
   // Arr import
   arrTest: (kind: 'radarr' | 'sonarr') =>

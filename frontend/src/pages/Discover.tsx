@@ -16,60 +16,68 @@ type Cat =
 
 export default function Discover() {
   const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
+  const [activeProvider, setActiveProvider] = useState<number | null>(null);
 
   const open = (item: TmdbItem) => setDetail({ id: item.tmdb_id, type: item.media_type });
   const close = () => setDetail(null);
 
   return (
     <div className="space-y-8">
-      <ProviderStrip onPick={(pid) => setDetail(null)} />
-
-      <Row
-        title="🔥 Trending this week"
-        query={['trending', 'all', 'week']}
-        fetcher={() => api.trending('all', 'week').then((r) => r.results)}
-        toggles={[
-          { label: 'Today', queryKey: ['trending', 'all', 'day'], fetcher: () => api.trending('all', 'day').then((r) => r.results) },
-          { label: 'Week', queryKey: ['trending', 'all', 'week'], fetcher: () => api.trending('all', 'week').then((r) => r.results) },
-        ]}
+      <ProviderStrip
+        onPick={(pid) => { setActiveProvider(pid); setDetail(null); }}
         onItemClick={open}
       />
 
-      <Row
-        title="⭐ Popular movies"
-        query={['popular', 'movie']}
-        fetcher={() => api.popular('movie').then((r) => r.results)}
-        toggles={[
-          { label: 'Movies', queryKey: ['popular', 'movie'], fetcher: () => api.popular('movie').then((r) => r.results) },
-          { label: 'TV', queryKey: ['popular', 'tv'], fetcher: () => api.popular('tv').then((r) => r.results) },
-        ]}
-        onItemClick={open}
-      />
+      {activeProvider === null && (
+        <>
+          <Row
+            title="🔥 Trending this week"
+            query={['trending', 'all', 'week']}
+            fetcher={() => api.trending('all', 'week').then((r) => r.results)}
+            toggles={[
+              { label: 'Today', queryKey: ['trending', 'all', 'day'], fetcher: () => api.trending('all', 'day').then((r) => r.results) },
+              { label: 'Week', queryKey: ['trending', 'all', 'week'], fetcher: () => api.trending('all', 'week').then((r) => r.results) },
+            ]}
+            onItemClick={open}
+          />
 
-      <Row
-        title="🎬 Now playing in theaters"
-        query={['now-playing']}
-        fetcher={() => api.nowPlaying().then((r) => r.results)}
-        onItemClick={open}
-      />
+          <Row
+            title="⭐ Popular movies"
+            query={['popular', 'movie']}
+            fetcher={() => api.popular('movie').then((r) => r.results)}
+            toggles={[
+              { label: 'Movies', queryKey: ['popular', 'movie'], fetcher: () => api.popular('movie').then((r) => r.results) },
+              { label: 'TV', queryKey: ['popular', 'tv'], fetcher: () => api.popular('tv').then((r) => r.results) },
+            ]}
+            onItemClick={open}
+          />
 
-      <Row
-        title="📅 Upcoming"
-        query={['upcoming']}
-        fetcher={() => api.upcoming().then((r) => r.results)}
-        onItemClick={open}
-      />
+          <Row
+            title="🎬 Now playing in theaters"
+            query={['now-playing']}
+            fetcher={() => api.nowPlaying().then((r) => r.results)}
+            onItemClick={open}
+          />
 
-      <Row
-        title="🏆 Top rated"
-        query={['top-rated', 'movie']}
-        fetcher={() => api.topRated('movie').then((r) => r.results)}
-        toggles={[
-          { label: 'Movies', queryKey: ['top-rated', 'movie'], fetcher: () => api.topRated('movie').then((r) => r.results) },
-          { label: 'TV', queryKey: ['top-rated', 'tv'], fetcher: () => api.topRated('tv').then((r) => r.results) },
-        ]}
-        onItemClick={open}
-      />
+          <Row
+            title="📅 Upcoming"
+            query={['upcoming']}
+            fetcher={() => api.upcoming().then((r) => r.results)}
+            onItemClick={open}
+          />
+
+          <Row
+            title="🏆 Top rated"
+            query={['top-rated', 'movie']}
+            fetcher={() => api.topRated('movie').then((r) => r.results)}
+            toggles={[
+              { label: 'Movies', queryKey: ['top-rated', 'movie'], fetcher: () => api.topRated('movie').then((r) => r.results) },
+              { label: 'TV', queryKey: ['top-rated', 'tv'], fetcher: () => api.topRated('tv').then((r) => r.results) },
+            ]}
+            onItemClick={open}
+          />
+        </>
+      )}
 
       <DetailModal
         tmdbId={detail?.id ?? null}
@@ -132,23 +140,19 @@ function Row({
   );
 }
 
-function ProviderStrip({ onPick }: { onPick: (pid: number | null) => void }) {
+function ProviderStrip({ onPick, onItemClick }: { onPick: (pid: number | null) => void; onItemClick: (item: TmdbItem) => void }) {
   const [activePid, setActivePid] = useState<number | null>(null);
   const { data: providers } = useQuery({
     queryKey: ['providers', 'movie'],
     queryFn: () => api.providers('movie'),
   });
-  const { data: providerItems, isLoading: filtLoading } = useQuery({
-    queryKey: ['by-provider', activePid],
-    queryFn: () => (activePid ? api.byProvider('movie', activePid).then((r) => r.results) : Promise.resolve([])),
-    enabled: !!activePid,
-  });
-  const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
 
   const wanted = Object.values(NL_PROVIDER_IDS);
   const visible = (providers?.providers || [])
     .filter((p) => wanted.includes(p.id as any))
     .sort((a, b) => wanted.indexOf(a.id as any) - wanted.indexOf(b.id as any));
+
+  const activeName = visible.find((p) => p.id === activePid)?.name || '';
 
   return (
     <section>
@@ -175,21 +179,54 @@ function ProviderStrip({ onPick }: { onPick: (pid: number | null) => void }) {
         ))}
       </div>
       {activePid !== null && (
-        <div className="mt-4">
-          <SectionHeader title="Available on this service" subtitle="Most popular for streaming in NL" />
-          <PosterGrid
-            items={providerItems}
-            loading={filtLoading}
-            onItemClick={(it) => setDetail({ id: it.tmdb_id, type: it.media_type })}
+        <div className="space-y-8 mt-6">
+          <ProviderRow
+            title={`Trending ${activeName} movies`}
+            pid={activePid}
+            type="movie"
+            sortBy="popularity.desc"
+            onItemClick={onItemClick}
+          />
+          <ProviderRow
+            title={`Trending ${activeName} series`}
+            pid={activePid}
+            type="tv"
+            sortBy="popularity.desc"
+            onItemClick={onItemClick}
+          />
+          <ProviderRow
+            title={`Top rated ${activeName} movies`}
+            pid={activePid}
+            type="movie"
+            sortBy="vote_average.desc"
+            onItemClick={onItemClick}
+          />
+          <ProviderRow
+            title={`Top rated ${activeName} series`}
+            pid={activePid}
+            type="tv"
+            sortBy="vote_average.desc"
+            onItemClick={onItemClick}
           />
         </div>
       )}
-      <DetailModal
-        tmdbId={detail?.id ?? null}
-        mediaType={detail?.type ?? null}
-        onClose={() => setDetail(null)}
-        onSelectItem={(it) => setDetail({ id: it.tmdb_id, type: it.media_type })}
-      />
+    </section>
+  );
+}
+
+function ProviderRow({ title, pid, type, sortBy, onItemClick }: {
+  title: string; pid: number; type: MediaType; sortBy: string; onItemClick: (item: TmdbItem) => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['by-provider', pid, type, sortBy],
+    queryFn: () => api.byProvider(type, pid, sortBy).then((r) => r.results),
+  });
+  const items = data || [];
+  if (!isLoading && items.length === 0) return null;
+  return (
+    <section>
+      <SectionHeader title={title} />
+      <PosterGrid items={items} loading={isLoading} onItemClick={onItemClick} />
     </section>
   );
 }

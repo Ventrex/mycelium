@@ -13,3 +13,5 @@ data/
 # Local-only dev/maintainer notes, not shipped to users
 HANDOFF.md
 CLAUDE.md
+# Design system reference (not part of the app)
+mycelium-design-system/

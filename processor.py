@@ -498,7 +498,8 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
     log.info("Processing request: %s [%s] %s (attempt %d)",
              req.title, req.media_type, req.imdb_id, _retry_attempt)
     started = time.monotonic()
-    row_id = db.insert_request(req.title, req.imdb_id, req.media_type, req.seasons)
+    row_id = db.insert_request(req.title, req.imdb_id, req.media_type, req.seasons,
+                                tmdb_id=req.tmdb_id)
     success = False
     winner: Optional[TorrentioStream] = None
     try:

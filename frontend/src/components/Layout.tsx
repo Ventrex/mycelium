@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
 const navItems = [
@@ -14,14 +14,12 @@ const navItems = [
 
 const adminItems = [
   { to: '/admin', label: 'Admin', icon: '⚙️' },
-];
-
-const helpItems = [
   { to: '/manual', label: 'Manual', icon: '📖' },
 ];
 
 export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const location = useLocation();
   const { data: session } = useQuery({
     queryKey: ['session'],
@@ -57,8 +55,8 @@ export default function Layout() {
             <circle cx="20" cy="5"  r="2.2" fill="#5eead4"/>
             <circle cx="20" cy="35" r="2.2" fill="#5eead4"/>
           </svg>
-          <span className="font-mono font-bold tracking-wide text-lg">
-            myc<span className="text-accent">3</span>l<span className="text-accent">1</span>um
+          <span className="font-mono font-bold tracking-wide text-lg text-white">
+            myc<span className="text-accent-2">3</span>l<span className="text-accent-2">1</span>um
           </span>
         </div>
         <nav className="py-3">
@@ -66,20 +64,35 @@ export default function Layout() {
           {showAdmin && (
             <SidebarSection title="Manage" items={adminItems} onClick={() => setDrawerOpen(false)} />
           )}
-          <SidebarSection title="Help" items={helpItems} onClick={() => setDrawerOpen(false)} />
         </nav>
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border text-xs text-muted">
           {session?.user ? (
             <div className="flex items-center justify-between">
-              <span>👤 {session.user.username}</span>
+              <div className="flex items-center gap-1.5">
+                <span>👤 {session.user.username}</span>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(true)}
+                  className="hover:text-white transition p-0.5"
+                  title="Account settings"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+                  </svg>
+                </button>
+              </div>
               <a href="/logout" className="hover:text-white">Log out</a>
             </div>
           ) : (
-            <a href="/login" className="hover:text-white">Sign in →</a>
+            <a href="/login" className="hover:text-white">Sign in</a>
           )}
           <div className="mt-2 text-center text-[10px] opacity-50">v0.1.0-beta.1</div>
         </div>
       </aside>
+      {showPasswordModal && (
+        <PasswordModal onClose={() => setShowPasswordModal(false)} />
+      )}
 
       {/* Drawer overlay */}
       {drawerOpen && (
@@ -94,16 +107,17 @@ export default function Layout() {
         <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur border-b border-border">
           <div className="flex items-center gap-3 px-4 lg:px-8 py-3">
             <button
-              className="lg:hidden p-2 -ml-2 hover:bg-card rounded"
+              className="lg:hidden p-2 -ml-2 hover:bg-card rounded text-white"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
               </svg>
             </button>
             <Breadcrumb path={location.pathname} />
             <div className="ml-auto flex items-center gap-2">
+              {session?.user && <RegionPicker region={session.user.region || 'NL'} />}
             </div>
           </div>
         </header>
@@ -137,7 +151,7 @@ function SidebarSection({
             key={item.to}
             href={item.to}
             onClick={onClick}
-            className="flex items-center gap-3 px-5 py-2 text-sm transition relative text-muted hover:text-white hover:bg-card"
+            className="flex items-center gap-3 px-5 py-2 text-sm transition relative text-muted hover:text-white hover:bg-bg"
           >
             <span className="text-base">{item.icon}</span>
             <span>{item.label}</span>
@@ -152,7 +166,7 @@ function SidebarSection({
               `flex items-center gap-3 px-5 py-2 text-sm transition relative
                ${isActive
                   ? 'text-white bg-accent/10 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent'
-                  : 'text-muted hover:text-white hover:bg-card'
+                  : 'text-muted hover:text-white hover:bg-bg'
                 }`
             }
           >
@@ -160,6 +174,87 @@ function SidebarSection({
             <span>{item.label}</span>
           </NavLink>
         )
+      )}
+    </div>
+  );
+}
+
+const REGIONS: { code: string; flag: string; name: string }[] = [
+  { code: 'NL', flag: '\u{1F1F3}\u{1F1F1}', name: 'Netherlands' },
+  { code: 'BE', flag: '\u{1F1E7}\u{1F1EA}', name: 'Belgium' },
+  { code: 'ZA', flag: '\u{1F1FF}\u{1F1E6}', name: 'South Africa' },
+  { code: 'US', flag: '\u{1F1FA}\u{1F1F8}', name: 'United States' },
+  { code: 'GB', flag: '\u{1F1EC}\u{1F1E7}', name: 'United Kingdom' },
+  { code: 'DE', flag: '\u{1F1E9}\u{1F1EA}', name: 'Germany' },
+  { code: 'FR', flag: '\u{1F1EB}\u{1F1F7}', name: 'France' },
+  { code: 'ES', flag: '\u{1F1EA}\u{1F1F8}', name: 'Spain' },
+  { code: 'IT', flag: '\u{1F1EE}\u{1F1F9}', name: 'Italy' },
+  { code: 'AU', flag: '\u{1F1E6}\u{1F1FA}', name: 'Australia' },
+  { code: 'CA', flag: '\u{1F1E8}\u{1F1E6}', name: 'Canada' },
+  { code: 'BR', flag: '\u{1F1E7}\u{1F1F7}', name: 'Brazil' },
+  { code: 'IN', flag: '\u{1F1EE}\u{1F1F3}', name: 'India' },
+  { code: 'JP', flag: '\u{1F1EF}\u{1F1F5}', name: 'Japan' },
+  { code: 'KR', flag: '\u{1F1F0}\u{1F1F7}', name: 'South Korea' },
+  { code: 'SE', flag: '\u{1F1F8}\u{1F1EA}', name: 'Sweden' },
+  { code: 'NO', flag: '\u{1F1F3}\u{1F1F4}', name: 'Norway' },
+  { code: 'DK', flag: '\u{1F1E9}\u{1F1F0}', name: 'Denmark' },
+  { code: 'PT', flag: '\u{1F1F5}\u{1F1F9}', name: 'Portugal' },
+  { code: 'PL', flag: '\u{1F1F5}\u{1F1F1}', name: 'Poland' },
+];
+
+function RegionPicker({ region }: { region: string }) {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (code: string) => api.setRegion(code),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session'] });
+      queryClient.invalidateQueries({ queryKey: ['trending'] });
+      queryClient.invalidateQueries({ queryKey: ['popular'] });
+      queryClient.invalidateQueries({ queryKey: ['top-rated'] });
+      queryClient.invalidateQueries({ queryKey: ['now-playing'] });
+      queryClient.invalidateQueries({ queryKey: ['upcoming'] });
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      queryClient.invalidateQueries({ queryKey: ['by-provider'] });
+    },
+  });
+
+  const current = REGIONS.find((r) => r.code === region);
+  const flag = current?.flag || region;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2 py-1 rounded border border-border hover:border-accent/50 text-sm transition"
+        title={current?.name || region}
+      >
+        <span className="text-base">{flag}</span>
+        <span className="text-xs text-muted">{region}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl overflow-hidden w-48 max-h-64 overflow-y-auto">
+            {REGIONS.map((r) => (
+              <button
+                key={r.code}
+                type="button"
+                onClick={() => {
+                  mutation.mutate(r.code);
+                  setOpen(false);
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition
+                  ${r.code === region ? 'bg-accent/10 text-white' : 'text-muted hover:text-white hover:bg-bg'}`}
+              >
+                <span>{r.flag}</span>
+                <span>{r.name}</span>
+                <span className="ml-auto text-[10px] opacity-50">{r.code}</span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -179,4 +274,98 @@ function Breadcrumb({ path }: { path: string }) {
   };
   const title = map[path] || 'Mycelium';
   return <h1 className="font-semibold text-lg">{title}</h1>;
+}
+
+function PasswordModal({ onClose }: { onClose: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const mutation = useMutation({
+    mutationFn: () => api.changePassword(current, password),
+    onSuccess: () => {
+      setSuccess(true);
+      setTimeout(onClose, 1500);
+    },
+    onError: (e: any) => {
+      setError(e.message || 'Failed to change password');
+    },
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match');
+      return;
+    }
+    mutation.mutate();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+        <h2 className="text-lg font-bold mb-4">Change password</h2>
+        {success ? (
+          <div className="text-ok text-sm py-4">Password changed successfully.</div>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            <div>
+              <label className="block text-xs text-muted mb-1">Current password</label>
+              <input
+                type="password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">New password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Confirm new password</label>
+              <input
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+              />
+            </div>
+            {error && <p className="text-danger text-xs">{error}</p>}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="submit"
+                disabled={mutation.isPending}
+                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 font-semibold text-sm"
+              >
+                {mutation.isPending ? 'Saving...' : 'Change password'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg border border-border hover:bg-bg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -31,7 +31,8 @@ export default function Requests() {
               <tr>
                 <th className="text-left py-2 px-3">Title</th>
                 <th className="text-left py-2 px-3">Type</th>
-                <th className="text-left py-2 px-3">Status</th>
+                <th className="text-left py-2 px-3">Approval</th>
+                <th className="text-left py-2 px-3">Library</th>
                 <th className="text-left py-2 px-3">Requested</th>
                 <th className="text-right py-2 px-3"></th>
               </tr>
@@ -43,6 +44,9 @@ export default function Requests() {
                   <td className="py-2 px-3 text-muted">{r.media_type}</td>
                   <td className="py-2 px-3">
                     <StatusPill status={r.status} />
+                  </td>
+                  <td className="py-2 px-3">
+                    <LibraryPill status={r.library_status} />
                   </td>
                   <td className="py-2 px-3 text-muted text-xs">{r.created_at}</td>
                   <td className="py-2 px-3 text-right">
@@ -205,4 +209,17 @@ function StatusPill({ status }: { status: string }) {
     status === 'failed' ? 'bg-red-500/20 text-red-400' :
     'bg-amber/20 text-amber';
   return <span className={`px-2 py-0.5 rounded text-xs font-semibold capitalize ${cls}`}>{status}</span>;
+}
+
+function LibraryPill({ status }: { status: string | null }) {
+  if (!status) return <span className="text-xs text-muted">--</span>;
+  const map: Record<string, { cls: string; label: string }> = {
+    success: { cls: 'bg-ok/20 text-ok', label: 'In library' },
+    wanted:  { cls: 'bg-amber/20 text-amber', label: 'Wanted' },
+    upcoming:{ cls: 'bg-blue-500/20 text-blue-400', label: 'Upcoming' },
+    failed:  { cls: 'bg-red-500/20 text-red-400', label: 'Failed' },
+    pending: { cls: 'bg-amber/20 text-amber', label: 'Processing' },
+  };
+  const m = map[status] || { cls: 'bg-gray-500/20 text-gray-400', label: status };
+  return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${m.cls}`}>{m.label}</span>;
 }

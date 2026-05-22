@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, tmdbImg } from '../api';
 import type { MediaType, TmdbItem, WatchlistItem } from '../types';
+import TrailerModal from './TrailerModal';
 
 export default function DetailModal({
   tmdbId,
@@ -41,6 +42,7 @@ export default function DetailModal({
   );
 
   // TV monitoring scope
+  const [showTrailer, setShowTrailer] = useState(false);
   const [monitorMode, setMonitorMode] = useState<'all' | 'future' | 'selected'>('all');
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>([]);
 
@@ -87,7 +89,7 @@ export default function DetailModal({
 
   // Reset state when modal opens fresh
   useEffect(() => {
-    if (open) setAddStatus('idle');
+    if (open) { setAddStatus('idle'); setShowTrailer(false); }
   }, [open, tmdbId]);
 
   // Esc to close
@@ -107,6 +109,7 @@ export default function DetailModal({
   const trailer = detail?.trailers?.[0];
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto p-4 sm:p-8"
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -250,14 +253,13 @@ export default function DetailModal({
                     {inWatchlist ? '★ In watchlist' : '☆ Watchlist'}
                   </button>
                   {trailer && (
-                    <a
-                      href={`https://www.youtube.com/watch?v=${trailer.key}`}
-                      target="_blank"
-                      rel="noopener"
+                    <button
+                      type="button"
+                      onClick={() => setShowTrailer(true)}
                       className="px-4 py-2 rounded-lg border border-border hover:bg-bg text-sm"
                     >
                       ▶ Trailer
-                    </a>
+                    </button>
                   )}
                   {detail.imdb_id && (
                     <a
@@ -367,6 +369,12 @@ export default function DetailModal({
         </div>
       </div>
     </div>
+    <TrailerModal
+      youtubeKey={showTrailer && trailer ? trailer.key : null}
+      title={detail?.title || ''}
+      onClose={() => setShowTrailer(false)}
+    />
+    </>
   );
 }
 

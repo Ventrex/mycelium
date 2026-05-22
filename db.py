@@ -356,6 +356,28 @@ def _migrate() -> None:
                 conn.execute(f"ALTER TABLE virtual_items ADD COLUMN {col} {typedef}")
                 log.info("Migration: added virtual_items.%s", col)
 
+        req_cols = {r["name"] for r in conn.execute("PRAGMA table_info(requests)")}
+        if "tmdb_id" not in req_cols:
+            conn.execute("ALTER TABLE requests ADD COLUMN tmdb_id INTEGER")
+            log.info("Migration: added requests.tmdb_id")
+            conn.execute("""
+                UPDATE requests SET tmdb_id = (
+                    SELECT COALESCE(w.tmdb_id, ms.tmdb_id, ur.tmdb_id)
+                    FROM requests r2
+                    LEFT JOIN watchlist w ON w.imdb_id = r2.imdb_id AND w.tmdb_id IS NOT NULL
+                    LEFT JOIN monitored_series ms ON ms.imdb_id = r2.imdb_id AND ms.tmdb_id IS NOT NULL
+                    LEFT JOIN user_requests ur ON ur.imdb_id = r2.imdb_id AND ur.tmdb_id IS NOT NULL
+                    WHERE r2.id = requests.id
+                    LIMIT 1
+                ) WHERE tmdb_id IS NULL
+            """)
+            log.info("Migration: backfilled requests.tmdb_id from related tables")
+
+        user_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+        if "region" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN region TEXT NOT NULL DEFAULT 'NL'")
+            log.info("Migration: added users.region")
+
         conn.commit()
 
 
@@ -420,15 +442,17 @@ def prune_old(days: int = 90) -> dict[str, int]:
 
 # ── requests ──────────────────────────────────────────────────────────────────
 
-def insert_request(title: str, imdb_id: str, media_type: str, seasons: list[int] | None = None) -> int:
+def insert_request(title: str, imdb_id: str, media_type: str, seasons: list[int] | None = None,
+                    tmdb_id: int | None = None) -> int:
     seasons_str = ",".join(str(s) for s in (seasons or []))
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO requests (title, imdb_id, media_type, seasons) VALUES (?, ?, ?, ?) "
+            "INSERT INTO requests (title, imdb_id, media_type, seasons, tmdb_id) VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(imdb_id) DO UPDATE SET "
             "title=excluded.title, seasons=COALESCE(excluded.seasons, seasons), "
+            "tmdb_id=COALESCE(excluded.tmdb_id, tmdb_id), "
             "updated_at=strftime('%Y-%m-%d %H:%M:%S', 'now')",
-            (title, imdb_id, media_type, seasons_str or None),
+            (title, imdb_id, media_type, seasons_str or None, tmdb_id),
         )
         conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -1216,14 +1240,14 @@ def get_user(user_id: int) -> dict | None:
 
 def list_users() -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("SELECT id, username, role, quota_monthly, auto_approve, enabled, created_at, last_login FROM users ORDER BY id").fetchall()
+        rows = conn.execute("SELECT id, username, role, quota_monthly, auto_approve, enabled, region, created_at, last_login FROM users ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
 
 def update_user(user_id: int, **fields) -> None:
     if not fields:
         return
-    allowed = {"password_hash", "role", "quota_monthly", "auto_approve", "enabled"}
+    allowed = {"password_hash", "role", "quota_monthly", "auto_approve", "enabled", "region"}
     cols = [k for k in fields if k in allowed]
     if not cols:
         return

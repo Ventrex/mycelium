@@ -7,17 +7,24 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-card rounded-2xl border border-border p-8 shadow-2xl">
-        <div className="flex items-center justify-center mb-6">
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-            <path d="M20 4 C30 4 36 14 36 22 C36 30 30 36 20 36 C10 36 4 30 4 22 C4 14 10 4 20 4 Z"
-                  stroke="#22d3ee" strokeWidth="2" fill="rgba(34,211,238,.08)"/>
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <svg width="32" height="32" viewBox="0 0 40 40" aria-hidden="true">
+            <g stroke="#22d3ee" strokeWidth="1.5" opacity="0.7" fill="none">
+              <line x1="10" y1="20" x2="30" y2="10"/>
+              <line x1="10" y1="20" x2="30" y2="30"/>
+              <line x1="30" y1="10" x2="30" y2="30"/>
+              <line x1="20" y1="5"  x2="10" y2="20"/>
+              <line x1="20" y1="35" x2="10" y2="20"/>
+            </g>
             <circle cx="10" cy="20" r="3.5" fill="#0d9488"/>
-            <circle cx="30" cy="10" r="3" fill="#22d3ee"/>
-            <circle cx="30" cy="30" r="3" fill="#22d3ee"/>
-            <circle cx="20" cy="5" r="2.2" fill="#5eead4"/>
+            <circle cx="30" cy="10" r="3"   fill="#22d3ee"/>
+            <circle cx="30" cy="30" r="3"   fill="#22d3ee"/>
+            <circle cx="20" cy="5"  r="2.2" fill="#5eead4"/>
             <circle cx="20" cy="35" r="2.2" fill="#5eead4"/>
           </svg>
-          <span className="ml-3 font-mono font-bold text-xl">mycelium</span>
+          <span className="font-mono font-bold text-2xl tracking-wide text-white">
+            myc<span className="text-[#22d3ee]">3</span>l<span className="text-[#22d3ee]">1</span>um
+          </span>
         </div>
         <h1 className="text-lg font-semibold text-center mb-6">Sign in</h1>
         {(error || errFromQuery) && (
@@ -33,7 +40,7 @@ export default function Login() {
             value={document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || ''}
           />
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-muted mb-1">
+            <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
               Username
             </label>
             <input
@@ -46,7 +53,7 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-muted mb-1">
+            <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
               Password
             </label>
             <input

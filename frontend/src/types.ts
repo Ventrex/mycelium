@@ -13,6 +13,7 @@ export interface TmdbItem {
   poster_path: string | null;
   backdrop_path: string | null;
   genre_ids?: number[];
+  library_status?: string | null;
 }
 
 export interface Provider {
@@ -82,7 +83,7 @@ export interface UserRequest {
 
 export interface SessionInfo {
   authenticated: boolean;
-  user?: { id: number; username: string; role: string; auto_approve: boolean } | null;
+  user?: { id: number; username: string; role: string; auto_approve: boolean; region: string } | null;
 }
 
 export interface WantedMovie {

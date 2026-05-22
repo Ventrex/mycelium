@@ -25,6 +25,7 @@ class MediaRequest:
     imdb_id: str
     seasons: list[int] = field(default_factory=list)
     episode: int | None = None
+    tmdb_id: int | None = None
 
     @property
     def is_movie(self) -> bool:
@@ -61,28 +62,28 @@ def _extract_request_id(payload: dict) -> str | None:
     return str(rid) if rid else None
 
 
-def _fetch_from_seerr(payload: dict) -> tuple[str | None, list[int]]:
-    """Return (imdb_id, seasons) from the Seerr API using the request_id in the payload."""
+def _fetch_from_seerr(payload: dict) -> tuple[str | None, list[int], int | None]:
+    """Return (imdb_id, seasons, tmdb_id) from the Seerr API using the request_id in the payload."""
     request_id = _extract_request_id(payload)
     if not request_id:
-        return None, []
+        return None, [], None
     try:
         data = seerr.get_request(request_id)
     except Exception as exc:
         log.warning("Seerr API lookup failed for request %s: %s", request_id, exc)
-        return None, []
+        return None, [], None
 
     media = data.get("media") or {}
+    tmdb_id_raw = media.get("tmdbId") or media.get("tmdb_id")
+    tmdb_id_val: int | None = int(tmdb_id_raw) if tmdb_id_raw else None
     imdb_id: str | None = media.get("imdbId") or media.get("imdb_id") or None
     if imdb_id:
         imdb_id = str(imdb_id).strip()
         log.info("Got IMDB ID from Seerr API: %s (request=%s)", imdb_id, request_id)
-    else:
-        tmdb_id = media.get("tmdbId") or media.get("tmdb_id")
-        if tmdb_id:
-            raw_type = (media.get("mediaType") or media.get("media_type") or "movie").lower()
-            media_type_for_tmdb = "movie" if raw_type == "movie" else "tv"
-            imdb_id = tmdb.tmdb_to_imdb(tmdb_id, media_type=media_type_for_tmdb)
+    elif tmdb_id_val:
+        raw_type = (media.get("mediaType") or media.get("media_type") or "movie").lower()
+        media_type_for_tmdb = "movie" if raw_type == "movie" else "tv"
+        imdb_id = tmdb.tmdb_to_imdb(tmdb_id_val, media_type=media_type_for_tmdb)
 
     seasons: list[int] = []
     for s in data.get("seasons") or []:
@@ -90,7 +91,7 @@ def _fetch_from_seerr(payload: dict) -> tuple[str | None, list[int]]:
         if isinstance(num, int) and num > 0:
             seasons.append(num)
 
-    return imdb_id or None, seasons
+    return imdb_id or None, seasons, tmdb_id_val
 
 
 def _extract_media_type(payload: dict) -> str:
@@ -136,14 +137,23 @@ def parse(payload: dict) -> MediaRequest:
 
     imdb_id = _extract_imdb(payload)
     seerr_seasons: list[int] = []
+    tmdb_id: int | None = None
+
+    media = payload.get("media") or {}
+    raw_tmdb = media.get("tmdbId") or media.get("tmdb_id")
+    if raw_tmdb:
+        tmdb_id = int(raw_tmdb)
+
     if not imdb_id:
         log.info("IMDB ID not in payload; querying Seerr API")
-        imdb_id, seerr_seasons = _fetch_from_seerr(payload)
+        imdb_id, seerr_seasons, seerr_tmdb = _fetch_from_seerr(payload)
+        if not tmdb_id and seerr_tmdb:
+            tmdb_id = seerr_tmdb
 
     if not imdb_id:
         raise WebhookError("No IMDB id found in webhook payload or Seerr API")
 
-    title = payload.get("subject") or (payload.get("media") or {}).get("title") or imdb_id
+    title = payload.get("subject") or media.get("title") or imdb_id
 
     if media_type == "series":
         seasons = _extract_seasons(payload) or seerr_seasons
@@ -153,4 +163,4 @@ def parse(payload: dict) -> MediaRequest:
     else:
         seasons = []
 
-    return MediaRequest(title=title, media_type=media_type, imdb_id=imdb_id, seasons=seasons)
+    return MediaRequest(title=title, media_type=media_type, imdb_id=imdb_id, seasons=seasons, tmdb_id=tmdb_id)

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { MediaType, TmdbItem } from '../types';
-import PosterGrid from '../components/PosterGrid';
+import PosterCard from '../components/PosterCard';
 import DetailModal from '../components/DetailModal';
 
 export default function Search() {
@@ -20,34 +20,39 @@ export default function Search() {
     typeFilter === 'all' ? true : i.media_type === typeFilter,
   );
 
+  const open = (it: TmdbItem) => setDetail({ id: it.tmdb_id, type: it.media_type });
+
   return (
-    <div className="space-y-6">
-      <div className="flex gap-2">
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search movies and series…"
-          className="flex-1 bg-card border border-border rounded-lg px-4 py-2.5 text-sm
-                      focus:outline-none focus:border-accent"
-        />
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as any)}
-          className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm"
-        >
-          <option value="all">All</option>
-          <option value="movie">Movies</option>
-          <option value="tv">Series</option>
-        </select>
-      </div>
+    <div className="space-y-4">
+      <input
+        type="text"
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search movies and series..."
+        className="w-full max-w-xl bg-bg border border-border rounded-lg px-4 py-3 text-sm
+                   focus:outline-none focus:border-accent text-white placeholder-muted/60"
+      />
+      {q.trim() && (
+        <p className="text-muted text-xs">{filtered.length} results for &quot;{q}&quot;</p>
+      )}
       {q.trim() ? (
-        <PosterGrid
-          items={filtered}
-          loading={isLoading}
-          onItemClick={(it) => setDetail({ id: it.tmdb_id, type: it.media_type })}
-          empty="No results"
-        />
+        isLoading ? (
+          <div className="text-muted text-sm py-6">Loading...</div>
+        ) : filtered.length > 0 ? (
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 200px))' }}>
+            {filtered.map((it) => (
+              <PosterCard
+                key={`${it.media_type}-${it.tmdb_id}`}
+                item={it}
+                onClick={open}
+                status={it.library_status}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-muted text-sm py-6">No results</div>
+        )
       ) : (
         <div className="text-muted text-sm py-8 text-center">
           Start typing to search across movies and series.
@@ -57,7 +62,7 @@ export default function Search() {
         tmdbId={detail?.id ?? null}
         mediaType={detail?.type ?? null}
         onClose={() => setDetail(null)}
-        onSelectItem={(it) => setDetail({ id: it.tmdb_id, type: it.media_type })}
+        onSelectItem={open}
       />
     </div>
   );

@@ -206,6 +206,7 @@ AUTH_ENABLED = _env("AUTH_ENABLED", "false").lower() in ("1", "true", "yes")
 AUTH_USERNAME = _env("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = _env("AUTH_PASSWORD", "")  # plain (will be upgraded), or empty
 AUTH_SESSION_SECRET = _env("AUTH_SESSION_SECRET", "mycelium-please-change-me")
+COOKIE_SECURE = _env("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
 # Trust an upstream proxy that does auth (Authelia / Authentik / Traefik /
 # Cloudflare Access). Only honoured when the request originates from a

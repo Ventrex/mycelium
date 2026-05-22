@@ -64,9 +64,17 @@ log_buffer.install()
 log = logging.getLogger("mycelium")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+if cfg.AUTH_SESSION_SECRET == "mycelium-please-change-me":
+    import warnings
+    warnings.warn(
+        "AUTH_SESSION_SECRET is still the default value. "
+        "Set a random string in your environment for production use.",
+        stacklevel=1,
+    )
 app.secret_key = cfg.AUTH_SESSION_SECRET
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = cfg.COOKIE_SECURE
 
 # CSRF protection on all state-changing endpoints; external webhooks opt out below.
 from flask_wtf.csrf import CSRFProtect, generate_csrf
@@ -141,6 +149,24 @@ def ui_set_password():
     auth.set_password(new_pw)
     flash("Password updated", "ok")
     return redirect(url_for("ui_dashboard") + "#settings")
+
+
+@app.post("/ui/api/me/password")
+@auth.require_auth
+def ui_api_me_password():
+    """Let users change their own password."""
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    p = request.get_json(silent=True) or {}
+    current = p.get("current", "")
+    new_pw = p.get("password", "")
+    if len(new_pw) < 6:
+        return jsonify(error="Password must be at least 6 characters"), 400
+    if not auth._verify_hashed(current, rec.get("password_hash", "")):
+        return jsonify(error="Current password is incorrect"), 400
+    auth.change_user_password(rec["id"], new_pw)
+    return jsonify(ok=True)
 
 
 def _start_scheduler() -> BackgroundScheduler:
@@ -324,6 +350,35 @@ scheduler = _start_scheduler()
 if CATCHUP_ENABLED:
     catchup.schedule()
 
+def _backfill_tmdb_ids() -> None:
+    """Resolve tmdb_id for requests that only have imdb_id (e.g. Seerr imports)."""
+    with db._connect() as conn:
+        rows = conn.execute(
+            "SELECT id, imdb_id, media_type FROM requests WHERE tmdb_id IS NULL AND imdb_id IS NOT NULL"
+        ).fetchall()
+    if not rows:
+        return
+    log.info("Backfilling tmdb_id for %d requests", len(rows))
+    filled = 0
+    for row in rows:
+        kind = "tv" if row["media_type"] == "tv" else "movie"
+        data = tmdb._get(f"/find/{row['imdb_id']}", params={"external_source": "imdb_id"})
+        if not data:
+            continue
+        results = data.get(f"{kind}_results") or []
+        if not results:
+            other = "movie" if kind == "tv" else "tv"
+            results = data.get(f"{other}_results") or []
+        if results:
+            tid = results[0].get("id")
+            if tid:
+                with db._connect() as conn:
+                    conn.execute("UPDATE requests SET tmdb_id = ? WHERE id = ?", (tid, row["id"]))
+                    conn.commit()
+                filled += 1
+    log.info("Backfilled tmdb_id for %d/%d requests", filled, len(rows))
+
+
 # Kick off initial movie sync + strm scan ~10s after startup so /health
 # answers fast on cold start and the scheduler isn't elbow-to-elbow with
 # the wizard's first request.
@@ -345,6 +400,7 @@ _delayed(60.0, library_sync.resolve_unknowns, "resolve-unknowns-init")
 _delayed(90.0, library_sync.import_series_to_monitored, "series-monitored-init")
 _delayed(120.0, nfo_generator.generate_all, "nfo-init")
 _delayed(150.0, nfo_generator.fetch_local_images, "images-init")
+_delayed(45.0, _backfill_tmdb_ids, "tmdb-id-backfill")
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -1206,50 +1262,109 @@ def ui_api_discover_search():
         return jsonify(results=[])
     page = int(request.args.get("page") or "1")
     results = tmdb.multi_search(q, page=page)
+    _enrich_library_status(results)
     return jsonify(results=results)
+
+
+_STATUS_PRIORITY = {"success": 0, "available": 0, "wanted": 1, "pending": 2, "upcoming": 3, "failed": 4}
+
+
+def _enrich_library_status(items: list[dict]) -> None:
+    """Add library_status to TMDB result dicts by checking all tables with tmdb_id."""
+    tmdb_ids = [it["tmdb_id"] for it in items if it.get("tmdb_id")]
+    if not tmdb_ids:
+        return
+    ph = ",".join("?" * len(tmdb_ids))
+    with db._connect() as conn:
+        rows = conn.execute(f"""
+            SELECT tmdb_id, status FROM requests WHERE tmdb_id IN ({ph})
+            UNION ALL
+            SELECT w.tmdb_id, r.status
+            FROM watchlist w JOIN requests r ON r.imdb_id = w.imdb_id
+            WHERE w.tmdb_id IN ({ph})
+            UNION ALL
+            SELECT ms.tmdb_id, r.status
+            FROM monitored_series ms JOIN requests r ON r.imdb_id = ms.imdb_id
+            WHERE ms.tmdb_id IN ({ph})
+            UNION ALL
+            SELECT ur.tmdb_id, COALESCE(r.status, ur.status)
+            FROM user_requests ur LEFT JOIN requests r ON r.imdb_id = ur.imdb_id
+            WHERE ur.tmdb_id IN ({ph})
+        """, tmdb_ids * 4).fetchall()
+    status_map: dict[int, str] = {}
+    for r in rows:
+        tid, st = r["tmdb_id"], r["status"]
+        prev = status_map.get(tid)
+        if prev is None or _STATUS_PRIORITY.get(st, 9) < _STATUS_PRIORITY.get(prev, 9):
+            status_map[tid] = st
+    for it in items:
+        it["library_status"] = status_map.get(it.get("tmdb_id"))
+
+
+def _user_region() -> str:
+    """Region from ?region= param, or from the logged-in user's profile, or system default."""
+    r = request.args.get("region")
+    if r:
+        return r
+    rec = auth.current_user_record()
+    if rec and rec.get("region"):
+        return rec["region"]
+    return cfg.AUTO_ADD_REGION
 
 
 @app.get("/ui/api/discover/trending")
 def ui_api_discover_trending():
     media = request.args.get("type", "all")  # all | movie | tv
     window = request.args.get("window", "week")  # day | week
-    return jsonify(results=tmdb.trending(media, window))
+    results = tmdb.trending(media, window)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/popular")
 def ui_api_discover_popular():
     media = request.args.get("type", "movie")
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
-    return jsonify(results=tmdb.popular(media, region=region))
+    region = _user_region()
+    results = tmdb.popular(media, region=region)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/top-rated")
 def ui_api_discover_top_rated():
     media = request.args.get("type", "movie")
-    return jsonify(results=tmdb.top_rated(media))
+    results = tmdb.top_rated(media)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/now-playing")
 def ui_api_discover_now_playing():
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
-    return jsonify(results=tmdb.now_playing(region=region))
+    region = _user_region()
+    results = tmdb.now_playing(region=region)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/upcoming")
 def ui_api_discover_upcoming():
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
-    return jsonify(results=tmdb.upcoming(region=region))
+    region = _user_region()
+    results = tmdb.upcoming(region=region)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/on-the-air")
 def ui_api_discover_on_the_air():
-    return jsonify(results=tmdb.on_the_air())
+    results = tmdb.on_the_air()
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/providers")
 def ui_api_discover_providers():
     media = request.args.get("type", "movie")
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    region = _user_region()
     return jsonify(providers=tmdb.list_providers(media, region=region))
 
 
@@ -1257,17 +1372,20 @@ def ui_api_discover_providers():
 def ui_api_discover_by_provider():
     media = request.args.get("type", "movie")
     pid = int(request.args.get("provider_id") or "0")
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    region = _user_region()
+    sort = request.args.get("sort_by", "popularity.desc")
     if not pid:
         return jsonify(error="provider_id required"), 400
-    return jsonify(results=tmdb.discover_by_provider(media, pid, region=region))
+    results = tmdb.discover_by_provider(media, pid, region=region, sort_by=sort)
+    _enrich_library_status(results)
+    return jsonify(results=results)
 
 
 @app.get("/ui/api/discover/details")
 def ui_api_discover_details():
     media = request.args.get("type", "movie")
     tmdb_id = int(request.args.get("id") or "0")
-    region = request.args.get("region") or cfg.AUTO_ADD_REGION
+    region = _user_region()
     if not tmdb_id:
         return jsonify(error="id required"), 400
     detail = tmdb.details(media, tmdb_id, region=region)
@@ -1344,13 +1462,13 @@ def _kick_off_processing(title: str, imdb_id: str, media_type: str,
         # pick up episodes as they air. Eagerly process only for all/selected.
         process_seasons = [] if monitor_mode == "future" else monitored
         req = MediaRequest(title=title, media_type="series",
-                            imdb_id=imdb_id, seasons=process_seasons)
+                            imdb_id=imdb_id, seasons=process_seasons, tmdb_id=tmdb_id)
         if not process_seasons:
             # Nothing to fetch now; the series is monitored and the periodic
             # check will grab future episodes.
             return
     else:
-        req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[])
+        req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[], tmdb_id=tmdb_id)
     threading.Thread(
         target=processor.process, args=(req,),
         name=f"discover-{imdb_id}", daemon=True,
@@ -1364,7 +1482,22 @@ def ui_api_watchlist_get():
     rec = auth.current_user_record()
     if not rec or not rec.get("id"):
         return jsonify(items=[])
-    return jsonify(items=db.get_watchlist(rec["id"]))
+    items = db.get_watchlist(rec["id"])
+    imdb_ids = [w["imdb_id"] for w in items if w.get("imdb_id")]
+    if imdb_ids:
+        with db._connect() as conn:
+            ph = ",".join("?" * len(imdb_ids))
+            rows = conn.execute(
+                f"SELECT imdb_id, status FROM requests WHERE imdb_id IN ({ph})",
+                imdb_ids,
+            ).fetchall()
+            lib_map = {r["imdb_id"]: r["status"] for r in rows}
+        for w in items:
+            w["library_status"] = lib_map.get(w.get("imdb_id"))
+    else:
+        for w in items:
+            w["library_status"] = None
+    return jsonify(items=items)
 
 
 @app.post("/ui/api/watchlist/add")
@@ -1400,10 +1533,27 @@ def ui_api_user_requests():
     rec = auth.current_user_record()
     if not rec:
         return jsonify(items=[])
-    if rec.get("role") == "admin":
-        status = request.args.get("status") or None
-        return jsonify(items=db.get_user_requests(status=status))
-    return jsonify(items=db.get_user_requests(user_id=rec["id"]))
+    status = request.args.get("status") or None
+    mine_only = request.args.get("mine") == "1"
+    if mine_only or rec.get("role") != "admin":
+        items = db.get_user_requests(user_id=rec["id"], status=status)
+    else:
+        items = db.get_user_requests(status=status)
+    imdb_ids = {r["imdb_id"] for r in items}
+    if imdb_ids:
+        with db._connect() as conn:
+            ph = ",".join("?" * len(imdb_ids))
+            rows = conn.execute(
+                f"SELECT imdb_id, status FROM requests WHERE imdb_id IN ({ph})",
+                list(imdb_ids),
+            ).fetchall()
+            lib_map = {r["imdb_id"]: r["status"] for r in rows}
+        for r in items:
+            r["library_status"] = lib_map.get(r["imdb_id"])
+    else:
+        for r in items:
+            r["library_status"] = None
+    return jsonify(items=items)
 
 
 @app.post("/ui/api/user-requests/<int:req_id>/approve")
@@ -1466,6 +1616,32 @@ def ui_search_all_wanted():
 def ui_api_wanted_episodes():
     db.reconcile_wanted_episodes()
     return jsonify(items=db.get_all_wanted_episodes())
+
+
+@app.get("/ui/api/library/status-map")
+def ui_api_library_status_map():
+    """Map of tmdb_id -> library status for badge display on poster cards."""
+    with db._connect() as conn:
+        rows = conn.execute("""
+            SELECT tmdb_id, status FROM requests WHERE tmdb_id IS NOT NULL
+            UNION
+            SELECT w.tmdb_id, r.status
+            FROM watchlist w
+            JOIN requests r ON r.imdb_id = w.imdb_id
+            WHERE w.tmdb_id IS NOT NULL
+            UNION
+            SELECT ms.tmdb_id, r.status
+            FROM monitored_series ms
+            JOIN requests r ON r.imdb_id = ms.imdb_id
+            WHERE ms.tmdb_id IS NOT NULL
+            UNION
+            SELECT ur.tmdb_id,
+                   COALESCE(r.status, ur.status) AS status
+            FROM user_requests ur
+            LEFT JOIN requests r ON r.imdb_id = ur.imdb_id
+            WHERE ur.tmdb_id IS NOT NULL
+        """).fetchall()
+    return jsonify({str(r["tmdb_id"]): r["status"] for r in rows})
 
 
 @app.get("/ui/api/library/movies")
@@ -1603,6 +1779,7 @@ def ui_api_session():
         "username": rec.get("username"),
         "role": rec.get("role"),
         "auto_approve": bool(rec.get("auto_approve")),
+        "region": rec.get("region", "NL"),
     })
 
 
@@ -1654,12 +1831,28 @@ def ui_api_users_update(user_id: int):
     if "quota_monthly" in p: fields["quota_monthly"] = int(p["quota_monthly"])
     if "auto_approve" in p: fields["auto_approve"] = 1 if p["auto_approve"] else 0
     if "enabled" in p: fields["enabled"] = 1 if p["enabled"] else 0
+    if "region" in p: fields["region"] = str(p["region"]).upper()[:5]
     if p.get("password"):
         if len(p["password"]) < 4:
             return jsonify(error="password too short"), 400
         fields["password_hash"] = auth.hash_password(p["password"])
     db.update_user(user_id, **fields)
     return jsonify(ok=True)
+
+
+@app.post("/ui/api/me/region")
+@auth.require_auth
+def ui_api_me_region():
+    """Let users change their own region."""
+    rec = auth.current_user_record()
+    if not rec:
+        return jsonify(error="not authenticated"), 401
+    p = request.get_json(silent=True) or {}
+    region = str(p.get("region", "")).upper().strip()[:5]
+    if not region:
+        return jsonify(error="region required"), 400
+    db.update_user(rec["id"], region=region)
+    return jsonify(ok=True, region=region)
 
 
 @app.post("/ui/api/users/<int:user_id>/delete")
