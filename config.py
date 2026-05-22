@@ -1,3 +1,5 @@
+VERSION = "0.1.0-beta.1"
+
 import logging
 import os
 

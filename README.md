@@ -3,9 +3,9 @@
 <img src="assets/banner.svg" alt="myc3l1um: the hidden network beneath your media library" width="800"/>
 
 <p>
-  <img src="https://img.shields.io/badge/status-WIP-f59e0b.svg" alt="Work in progress"/>
+  <a href="https://github.com/corveck79/mycelium/releases"><img src="https://img.shields.io/github/v/release/corveck79/mycelium?include_prereleases&color=22d3ee" alt="Release"/></a>
+  <a href="https://github.com/corveck79/mycelium/pkgs/container/mycelium"><img src="https://img.shields.io/badge/ghcr.io-mycelium-2496ED.svg?logo=docker&logoColor=white" alt="Docker image"/></a>
   <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12"/>
-  <img src="https://img.shields.io/badge/docker-ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker ready"/>
   <img src="https://img.shields.io/badge/license-MIT-22d3ee.svg" alt="MIT licensed"/>
   <img src="https://img.shields.io/badge/self--hosted-✓-0d9488.svg" alt="Self hosted"/>
 </p>

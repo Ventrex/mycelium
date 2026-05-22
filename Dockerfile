@@ -9,6 +9,12 @@ RUN npm run build
 # ── Stage 2: Python runtime ──────────────────────────────────────────────────
 FROM python:3.12-slim
 
+ARG BUILD_VERSION=dev
+LABEL org.opencontainers.image.title="mycelium" \
+      org.opencontainers.image.description="Self-hosted media pipeline: watchlist to .strm via TorBox" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.source="https://github.com/corveck79/mycelium"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     LISTEN_HOST=0.0.0.0 \

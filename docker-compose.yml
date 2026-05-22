@@ -1,7 +1,7 @@
 services:
   mycelium:
     build: .
-    image: mycelium:latest
+    image: ghcr.io/corveck79/mycelium:latest
     container_name: mycelium
     restart: unless-stopped
     ports:
