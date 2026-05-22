@@ -35,6 +35,10 @@
 
 ---
 
+<p align="center">
+  <img src="assets/screenshot-discover.png.png" alt="Mycelium Discover UI" width="900"/>
+</p>
+
 > [!NOTE]
 > **Beta.** Mycelium is in active use by a small group of users and works reliably,
 > but it's still evolving. Expect occasional breaking changes between releases.

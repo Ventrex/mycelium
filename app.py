@@ -133,7 +133,7 @@ def login_submit():
 @app.get("/logout")
 def logout_view():
     from flask import session as _session
-    _session.pop("user", None)
+    _session.clear()
     return redirect(url_for("login_view"))
 
 

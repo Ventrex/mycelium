@@ -13,6 +13,7 @@ the issuer metadata.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from flask import Flask, redirect, request, session, url_for
 
@@ -21,6 +22,18 @@ import config as cfg
 log = logging.getLogger(__name__)
 
 _oauth = None  # populated by install()
+
+
+def _safe_next_path(nxt: str | None, default: str = "/ui") -> str:
+    nxt = (nxt or "").strip()
+    if not nxt:
+        return default
+    parts = urlsplit(nxt)
+    if parts.scheme or parts.netloc:
+        return default
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        return default
+    return nxt
 
 
 def is_enabled() -> bool:
@@ -56,7 +69,7 @@ def install(app: Flask) -> None:
 
     @app.get("/login/oidc")
     def oidc_login():
-        nxt = request.args.get("next") or "/ui"
+        nxt = _safe_next_path(request.args.get("next"), default="/ui")
         session["_oidc_next"] = nxt
         redirect_uri = url_for("oidc_callback", _external=True)
         return _oauth.oidc.authorize_redirect(redirect_uri)
@@ -89,6 +102,6 @@ def install(app: Flask) -> None:
 
         session["user"] = username
         session["auth_source"] = "oidc"
-        nxt = session.pop("_oidc_next", "/ui")
+        nxt = _safe_next_path(session.pop("_oidc_next", "/ui"), default="/ui")
         log.info("OIDC: %s signed in", username)
         return redirect(nxt)

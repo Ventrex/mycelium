@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import db
+import jellyfin
 import strm_generator
 import tmdb
 import torbox
@@ -811,3 +812,4 @@ def run_cleanup() -> None:
 
     if changed:
         strm_generator.run_and_refresh()
+        jellyfin.refresh_library()
