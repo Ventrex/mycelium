@@ -15,7 +15,7 @@
 <p>
   Self-hosted automation that turns watchlist clicks into Jellyfin-ready streams via
   <a href="https://torbox.app">TorBox</a> in about 30 seconds, with zero local storage.
-  Uses <strong>Catbox lazy materialization</strong> by default: torrents are only added to
+  Uses <strong><a href="https://docs.elfhosted.com/app/catbox/">Catbox</a> lazy materialization</strong> by default: torrents are only added to
   TorBox when you press play, and released after idle time. Library size is effectively
   unlimited. Comes with a built-in <strong>discovery + request UI</strong> (no Seerr needed,
   but Seerr/Jellyseerr webhooks still work if you want them).
