@@ -297,6 +297,7 @@ CREATE INDEX IF NOT EXISTS idx_createtorrent_ts ON createtorrent_log(ts);
 def init() -> None:
     # PRAGMAs are applied in _raw_connect() on every new thread-local connection.
     with _connect() as conn:
+        _dedup_requests(conn)
         for stmt in _DDL.split(";"):
             stmt = stmt.strip()
             if stmt:
@@ -304,6 +305,28 @@ def init() -> None:
         conn.commit()
     _migrate()
     integrity_check()
+
+
+def _dedup_requests(conn) -> None:
+    """Remove duplicate imdb_id rows before the UNIQUE index is created."""
+    dupes = conn.execute(
+        "SELECT imdb_id, COUNT(*) AS cnt FROM requests "
+        "GROUP BY imdb_id HAVING cnt > 1"
+    ).fetchall()
+    if not dupes:
+        return
+    for row in dupes:
+        ids = conn.execute(
+            "SELECT id FROM requests WHERE imdb_id=? ORDER BY created_at DESC",
+            (row["imdb_id"],),
+        ).fetchall()
+        keep = ids[0]["id"]
+        conn.execute(
+            "DELETE FROM requests WHERE imdb_id=? AND id!=?",
+            (row["imdb_id"], keep),
+        )
+    conn.commit()
+    log.info("Dedup: removed duplicates for %d imdb_id(s) in requests", len(dupes))
 
 
 def _migrate() -> None:

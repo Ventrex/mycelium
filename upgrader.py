@@ -225,9 +225,9 @@ def recheck_wanted() -> int:
     added = 0
     for w in wanted:
         usage = torbox.createtorrent_usage()
-        if usage["count"] >= torbox._CREATETORRENT_LIMIT - 2:
+        if usage["count"] >= torbox._CREATETORRENT_LIMIT_HOUR - 2:
             log.info("Wanted: createtorrent budget low (%d/%d) — pausing recheck",
-                     usage["count"], torbox._CREATETORRENT_LIMIT)
+                     usage["count"], torbox._CREATETORRENT_LIMIT_HOUR)
             break
         req = MediaRequest(title=w["title"], media_type="movie",
                             imdb_id=w["imdb_id"], seasons=[])
