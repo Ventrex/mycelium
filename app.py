@@ -1166,6 +1166,17 @@ def ui_api_all_requests():
     return jsonify(items=rows)
 
 
+@app.get("/ui/api/requests/status")
+def ui_api_request_status():
+    imdb_id = request.args.get("imdb_id")
+    if not imdb_id:
+        return jsonify(error="imdb_id required"), 400
+    row = db.get_request_by_imdb(imdb_id)
+    if not row:
+        return jsonify(status="not_found")
+    return jsonify(status=row.get("status"), imdb_id=imdb_id)
+
+
 @app.get("/ui/api/requests/failed")
 def ui_api_failed_requests():
     rows = [r for r in db.get_recent(500) if r.get("status") == "failed"]

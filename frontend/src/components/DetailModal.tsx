@@ -40,6 +40,28 @@ export default function DetailModal({
   const [addStatus, setAddStatus] = useState<'idle' | 'adding' | 'added' | 'pending' | 'error'>(
     'idle',
   );
+  const [pollingImdbId, setPollingImdbId] = useState<string | null>(null);
+
+  // Poll request status until success/failed
+  useEffect(() => {
+    if (!pollingImdbId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/ui/api/requests/status?imdb_id=${pollingImdbId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'success') {
+          setAddStatus('added');
+          setPollingImdbId(null);
+          queryClient.invalidateQueries({ queryKey: ['detail', mediaType, tmdbId] });
+        } else if (data.status === 'failed') {
+          setAddStatus('error');
+          setPollingImdbId(null);
+        }
+      } catch { /* ignore */ }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pollingImdbId, queryClient, mediaType, tmdbId]);
 
   // TV monitoring scope
   const [showTrailer, setShowTrailer] = useState(false);
@@ -58,7 +80,13 @@ export default function DetailModal({
       ),
     onMutate: () => setAddStatus('adding'),
     onSuccess: (r) => {
-      setAddStatus(r.status === 'pending' ? 'pending' : 'added');
+      if (r.status === 'pending') {
+        setAddStatus('pending');
+      } else if (r.imdb_id) {
+        setPollingImdbId(r.imdb_id);
+      } else {
+        setAddStatus('added');
+      }
     },
     onError: () => setAddStatus('error'),
   });
@@ -414,7 +442,7 @@ function LibraryButton({
       className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed font-semibold text-sm"
     >
       {addStatus === 'adding'
-        ? 'Adding...'
+        ? 'Processing...'
         : addStatus === 'added'
         ? 'Added'
         : addStatus === 'pending'

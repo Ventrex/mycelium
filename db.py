@@ -470,6 +470,15 @@ def update_request(row_id: int, status: str, quality: str | None = None,
         conn.commit()
 
 
+def get_request_by_imdb(imdb_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM requests WHERE imdb_id=? ORDER BY created_at DESC LIMIT 1",
+            (imdb_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_recent(limit: int = 100) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
