@@ -140,6 +140,7 @@ SETTING_GROUPS = [
             "TMDB_API_KEY",
             "ZILEAN_ENABLED", "ZILEAN_URL",
             "REALDEBRID_API_KEY", "MULTI_DEBRID_ENABLED",
+            "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
         ],
     },
     {

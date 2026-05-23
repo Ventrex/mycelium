@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import SubtitlePicker from './SubtitlePicker'
+import { api } from '../api'
+import { usePlugins } from '../hooks/usePlugins'
 
 const STEP_LABELS: Record<string, string> = {
   searching:     'Zoeken naar web-compatibele versie…',
@@ -43,6 +45,9 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
   const videoRef   = useRef<HTMLVideoElement>(null)
   const hlsRef     = useRef<Hls | null>(null)
   const saveTimer  = useRef<ReturnType<typeof setInterval>>()
+  const { isLoaded } = usePlugins()
+  const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session })
+  const traktEnabled = isLoaded('trakt') && (session?.user as any)?.trakt_connected
 
   const [jobId,       setJobId]       = useState<string | null>(null)
   const [token,       setToken]       = useState<string | null>(null)
@@ -84,6 +89,13 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
 
     video.addEventListener('loadedmetadata', () => video.play(), { once: true })
 
+    video.addEventListener('play', () => {
+      if (traktEnabled) {
+        const progress = video.duration ? (video.currentTime / video.duration) * 100 : 0
+        api.traktScrobble({ action: 'start', media_type, imdb_id, progress, season, episode, title })
+      }
+    }, { once: true })
+
     saveTimer.current = setInterval(() => {
       if (token && !video.paused) {
         fetch(`/stream/${token}/position`, {
@@ -95,6 +107,11 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
     }, 10_000)
 
     return () => {
+      if (traktEnabled && video.duration) {
+        const progress = (video.currentTime / video.duration) * 100
+        const action = progress >= 80 ? 'stop' : 'pause'
+        api.traktScrobble({ action, media_type, imdb_id, progress, season, episode, title })
+      }
       hlsRef.current?.destroy()
       clearInterval(saveTimer.current)
     }
