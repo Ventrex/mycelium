@@ -1259,7 +1259,7 @@ def get_user(user_id: int) -> dict | None:
 
 def list_users() -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("SELECT id, username, role, quota_monthly, auto_approve, enabled, region, created_at, last_login FROM users ORDER BY id").fetchall()
+        rows = conn.execute("SELECT * FROM users ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
 
