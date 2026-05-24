@@ -4,6 +4,7 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY frontend/ ./
+COPY plugins/ /plugins/
 RUN npm run build
 
 # ── Stage 2: Python runtime ──────────────────────────────────────────────────
