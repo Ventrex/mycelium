@@ -6,32 +6,46 @@ import PluginSettingsCard from '../components/PluginSettingsCard';
 
 export default function Settings() {
   const { plugins } = usePlugins();
+  const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session });
+
+  const visiblePlugins = plugins.filter(p => {
+    const anyFieldEnabled = (p.user_fields || []).some(f => !!(session?.user as any)?.[f]);
+    return anyFieldEnabled || !!p.settings_ui;
+  });
 
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
 
-      <div>
-        <h1 className="text-xl font-bold mb-1">Plugins</h1>
-        <p className="text-muted text-sm">Enable features and connect accounts for your profile.</p>
-      </div>
-
-      {plugins.length === 0 && (
-        <div className="bg-card rounded-lg border border-border p-6 text-muted text-sm">
-          No plugins loaded.
-        </div>
+      {visiblePlugins.length > 0 && (
+        <>
+          <div>
+            <h1 className="text-xl font-bold mb-1">Plugins</h1>
+            <p className="text-muted text-sm">Enable features and connect accounts for your profile.</p>
+          </div>
+          {visiblePlugins.map(plugin => (
+            <PluginCard key={plugin.name} plugin={plugin} session={session} />
+          ))}
+        </>
       )}
-
-      {plugins.map(plugin => (
-        <PluginCard key={plugin.name} plugin={plugin} />
-      ))}
     </div>
   );
 }
 
-function PluginCard({ plugin }: { plugin: ReturnType<typeof usePlugins>['plugins'][number] }) {
+function PluginCard({ plugin, session }: {
+  plugin: ReturnType<typeof usePlugins>['plugins'][number];
+  session: any;
+}) {
   const hasFields = plugin.user_fields?.length > 0;
   const hasUi = !!plugin.settings_ui;
+
+  // User-field toggles: only show if the admin has already enabled at least one
+  // field for this user. This keeps toggles admin-controlled — users can turn
+  // off what they have access to, but cannot self-grant new access.
+  const anyFieldEnabled = hasFields &&
+    plugin.user_fields.some(f => !!(session?.user as any)?.[f]);
+
+  if (!anyFieldEnabled && !hasUi) return null;
 
   return (
     <div className="bg-card rounded-lg border border-border p-6 space-y-4">
@@ -42,7 +56,7 @@ function PluginCard({ plugin }: { plugin: ReturnType<typeof usePlugins>['plugins
         )}
       </div>
 
-      {hasFields && <PluginUserFieldsSection plugin={plugin} />}
+      {anyFieldEnabled && <PluginUserFieldsSection plugin={plugin} />}
       {hasUi && <PluginSettingsCard plugin={plugin} embedded />}
     </div>
   );
