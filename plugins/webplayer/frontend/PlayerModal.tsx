@@ -23,6 +23,7 @@ interface FileInfo {
   video_codec:   string
   width:         number
   height:        number
+  is_hdr:        boolean
   audio_tracks:  AudioTrack[]
   subtitle_tracks: any[]
 }
@@ -250,6 +251,9 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
                   <span className="text-white font-medium">{fileInfo.height}p</span>
                 )}
                 <span>{fileInfo.video_codec?.toUpperCase()}</span>
+                {fileInfo.is_hdr && (
+                  <span className="text-yellow-400 text-xs font-medium">HDR→SDR</span>
+                )}
 
                 {fileInfo.audio_tracks?.length > 1 && (
                   <select

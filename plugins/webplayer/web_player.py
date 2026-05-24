@@ -200,12 +200,14 @@ def _run_job(job: PrepareJob) -> None:
         tmp_dir.mkdir(parents=True, exist_ok=True)
 
         multi_audio = len(file_info["audio_tracks"]) > 1
+        is_hdr      = file_info.get("is_hdr", False)
+        seg_timeout = 180 if is_hdr else SEGMENT_WAIT_TIMEOUT
         session     = _start_hls(token, cdn_url, file_info, tmp_dir)
 
         # For multi-audio, _start_hls already waited for video segments.
         # For single-audio, wait here.
         if not multi_audio:
-            if not _wait_segments(tmp_dir, SEGMENT_WAIT_COUNT, SEGMENT_WAIT_TIMEOUT):
+            if not _wait_segments(tmp_dir, SEGMENT_WAIT_COUNT, seg_timeout):
                 session.proc.terminate()
                 job.status = JobStatus.ERROR
                 job.error  = "Timeout: FFmpeg produced no segments."
@@ -247,11 +249,18 @@ def _probe(cdn_url: str) -> dict:
     def _tag(s, key, default=""):
         return s.get("tags", {}).get(key, default)
 
+    # HDR detection: PQ (HDR10/HDR10+) or HLG transfer functions signal HDR.
+    _HDR_TRANSFERS = {"smpte2084", "arib-std-b67", "smpte428"}
+    color_transfer  = video.get("color_transfer", "")
+    is_hdr          = color_transfer in _HDR_TRANSFERS
+
     return {
         "duration_s":      float(data.get("format", {}).get("duration", 0)),
         "video_codec":     video.get("codec_name", "unknown"),
         "width":           video.get("width"),
         "height":          video.get("height"),
+        "is_hdr":          is_hdr,
+        "color_transfer":  color_transfer,
         "audio_tracks":    [
             {"index": i, "codec": t["codec_name"],
              "language": _tag(t, "language", "und"),
@@ -376,22 +385,40 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
     audio_tracks = file_info["audio_tracks"]
     multi_audio  = len(audio_tracks) > 1
 
-    # Codec routing — always copy video, never transcode.
-    # AV1/VP9/VP8 are filtered out at selection time (_web_score).
-    # H.264  -> mpegts segments (universally supported)
-    # HEVC   -> fMP4 segments (Safari native; Chrome/Edge hardware decode)
+    # Codec routing.
+    # HDR (PQ/HLG): browsers can't tone-map — transcode to SDR H.264 + mpegts.
+    # HEVC SDR:     fMP4 passthrough, Safari/Chrome/Edge hardware decode.
+    # H.264 SDR:    mpegts passthrough, universally supported.
+    # AV1/VP9/VP8:  filtered out at selection time (_web_score), never reach here.
     _FMP4_CODECS = {"hevc", "h265"}
     video_codec  = (file_info.get("video_codec") or "h264").lower()
-    use_fmp4     = video_codec in _FMP4_CODECS
+    is_hdr       = file_info.get("is_hdr", False)
+    use_fmp4     = (video_codec in _FMP4_CODECS) and not is_hdr
 
-    v_enc    = ["-c:v", "copy"]
-    seg_type = "fmp4" if use_fmp4 else "mpegts"
-    seg_ext  = "m4s"  if use_fmp4 else "ts"
+    if is_hdr:
+        # Tone-map HDR -> SDR so the browser sees normal BT.709 colours.
+        # zscale is part of libzimg (standard in most FFmpeg builds).
+        _TONEMAP_VF = (
+            "zscale=t=linear:npl=100,"
+            "format=gbrpf32le,"
+            "zscale=p=bt709,"
+            "tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,"
+            "format=yuv420p"
+        )
+        v_enc      = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                      "-vf", _TONEMAP_VF]
+        seg_type   = "mpegts"
+        seg_ext    = "ts"
+        mode_label = "hdr-tonemap"
+    else:
+        v_enc      = ["-c:v", "copy"]
+        seg_type   = "fmp4" if use_fmp4 else "mpegts"
+        seg_ext    = "m4s"  if use_fmp4 else "ts"
+        mode_label = "fmp4-copy" if use_fmp4 else "ts-copy"
 
     # -ss BEFORE -i = fast keyframe seek.
     input_args = (["-ss", f"{seek_offset:.3f}"] if seek_offset > 0 else []) + ["-i", cdn_url]
-
-    mode_label = "fmp4-copy" if use_fmp4 else "ts-copy"
 
     if multi_audio:
         # Multi-audio: video-only output + one output per audio track,
