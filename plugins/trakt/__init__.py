@@ -59,6 +59,16 @@ def run_migrations() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS trakt_watched (
+                user_id    INTEGER NOT NULL,
+                imdb_id    TEXT    NOT NULL,
+                media_type TEXT    NOT NULL DEFAULT 'movie',
+                watched_at TEXT,
+                PRIMARY KEY (user_id, imdb_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
 
 
 def session_data(user_record: dict) -> dict:

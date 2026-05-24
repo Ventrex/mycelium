@@ -210,13 +210,67 @@ def sync_user_watchlist(user_id: int, access_token: str) -> int:
     return added
 
 
+def _fetch_watched(access_token: str, kind: str) -> list[dict]:
+    """kind: 'movies' or 'shows'"""
+    try:
+        r = req_lib.get(f"{_BASE}/users/me/watched/{kind}",
+                        headers=_headers(access_token), timeout=30)
+        r.raise_for_status()
+        return r.json() or []
+    except Exception as exc:
+        log.warning("Trakt watched/%s fetch failed: %s", kind, exc)
+        return []
+
+
+def upsert_watched(user_id: int, imdb_id: str, media_type: str,
+                   watched_at: str | None = None) -> None:
+    with db._connect() as c:
+        c.execute(
+            """INSERT INTO trakt_watched (user_id, imdb_id, media_type, watched_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id, imdb_id) DO UPDATE SET
+                   media_type = excluded.media_type,
+                   watched_at = COALESCE(excluded.watched_at, watched_at)""",
+            (user_id, imdb_id, media_type, watched_at),
+        )
+
+
+def get_watched_imdb_ids(user_id: int) -> list[str]:
+    with db._connect() as c:
+        rows = c.execute(
+            "SELECT imdb_id FROM trakt_watched WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return [r["imdb_id"] for r in rows]
+
+
+def sync_user_watched(user_id: int, access_token: str) -> int:
+    """Pulls Trakt watch history into trakt_watched. Returns count synced."""
+    synced = 0
+    for item in _fetch_watched(access_token, "movies"):
+        m = item.get("movie", {})
+        imdb_id = m.get("ids", {}).get("imdb")
+        if not imdb_id:
+            continue
+        upsert_watched(user_id, imdb_id, "movie", item.get("last_watched_at"))
+        synced += 1
+    for item in _fetch_watched(access_token, "shows"):
+        s = item.get("show", {})
+        imdb_id = s.get("ids", {}).get("imdb")
+        if not imdb_id:
+            continue
+        upsert_watched(user_id, imdb_id, "tv", item.get("last_watched_at"))
+        synced += 1
+    return synced
+
+
 def sync_all_users() -> None:
-    """Background job: sync watchlists for all connected users."""
+    """Background job: sync watchlists + watch history for all connected users."""
     for tok in _get_all_tokens():
         try:
             tok = refresh_if_needed(tok)
-            count = sync_user_watchlist(tok["user_id"], tok["access_token"])
-            log.info("Trakt sync: user %d — %d items", tok["user_id"], count)
+            wl = sync_user_watchlist(tok["user_id"], tok["access_token"])
+            watched = sync_user_watched(tok["user_id"], tok["access_token"])
+            log.info("Trakt sync: user %d — %d watchlist, %d watched", tok["user_id"], wl, watched)
         except Exception as exc:
             log.warning("Trakt sync failed for user %d: %s", tok["user_id"], exc)
 

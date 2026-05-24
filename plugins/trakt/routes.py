@@ -105,6 +105,18 @@ def trakt_auth_revoke():
     return jsonify(ok=True)
 
 
+@bp.get("/ui/api/trakt/watched")
+def trakt_watched():
+    rec = _require_user()
+    user_id = rec.get("id")
+    if not user_id:
+        return jsonify(imdb_ids=[])
+    tok = trakt_api.get_token(user_id)
+    if not tok:
+        return jsonify(imdb_ids=[])
+    return jsonify(imdb_ids=trakt_api.get_watched_imdb_ids(user_id))
+
+
 @bp.post("/ui/api/trakt/sync")
 def trakt_sync():
     rec = _require_user()
@@ -115,8 +127,9 @@ def trakt_sync():
     if not tok:
         return jsonify(error="Not connected to Trakt"), 400
     tok = trakt_api.refresh_if_needed(tok)
-    count = trakt_api.sync_user_watchlist(user_id, tok["access_token"])
-    return jsonify(ok=True, added=count)
+    wl = trakt_api.sync_user_watchlist(user_id, tok["access_token"])
+    watched = trakt_api.sync_user_watched(user_id, tok["access_token"])
+    return jsonify(ok=True, added=wl, watched=watched)
 
 
 @bp.post("/ui/api/trakt/scrobble")

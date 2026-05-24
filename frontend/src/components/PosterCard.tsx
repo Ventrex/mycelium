@@ -1,5 +1,6 @@
 import { tmdbImg } from '../api';
 import type { TmdbItem } from '../types';
+import { useWatched } from '../hooks/useWatched';
 
 export default function PosterCard({
   item,
@@ -10,6 +11,8 @@ export default function PosterCard({
   onClick: (item: TmdbItem) => void;
   status?: string | null;
 }) {
+  const watched = useWatched();
+  const isWatched = !!(item.imdb_id && watched.has(item.imdb_id));
   const poster = tmdbImg.poster(item.poster_path);
   const isTV = item.media_type === 'tv';
   return (
@@ -45,6 +48,12 @@ export default function PosterCard({
       >
         {isTV ? 'TV' : 'Movie'}
       </div>
+      {isWatched && (
+        <div className="absolute top-8 right-2 w-5 h-5 rounded-full bg-green-500/90 flex items-center justify-center shadow-md z-10"
+             title="Watched">
+          <span className="text-white text-[10px] font-bold leading-none">✓</span>
+        </div>
+      )}
       {status && <StatusBadge status={status} />}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2.5 pt-6">
         <div className="font-semibold text-xs leading-tight line-clamp-2 mb-1">

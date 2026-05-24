@@ -4,6 +4,7 @@ import { api, tmdbImg } from '../api';
 import type { MediaType, TmdbItem, WatchlistItem } from '../types';
 import TrailerModal from './TrailerModal';
 import { usePluginSlot } from '../hooks/usePluginSlots';
+import { useWatched } from '../hooks/useWatched';
 
 export default function DetailModal({
   tmdbId,
@@ -41,6 +42,8 @@ export default function DetailModal({
   // webplayer_enabled is injected by the webplayer plugin; absent when plugin not loaded
   const canPlay = !!(session?.user as any)?.webplayer_enabled;
   const PlayerModal = usePluginSlot('episode-player');
+  const watched = useWatched();
+  const isWatched = !!(detail?.imdb_id && watched.has(detail.imdb_id));
 
   const [addStatus, setAddStatus] = useState<'idle' | 'adding' | 'added' | 'pending' | 'error' | 'wanted' | 'upcoming'>(
     'idle',
@@ -204,6 +207,9 @@ export default function DetailModal({
                   <p className="text-muted italic mt-1">{detail.tagline}</p>
                 )}
                 <div className="flex flex-wrap gap-2 mt-3 text-xs">
+                  {isWatched && (
+                    <span className="px-2 py-0.5 rounded bg-green-600 text-white font-semibold">✓ Watched</span>
+                  )}
                   {detail.rating > 0 && (
                     <Badge>★ {detail.rating} ({detail.votes} votes)</Badge>
                   )}
