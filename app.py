@@ -412,7 +412,14 @@ _delayed(45.0, _backfill_tmdb_ids, "tmdb-id-backfill")
 def _check_auth() -> None:
     if not WEBHOOK_SECRET:
         return
-    provided = request.headers.get("X-Webhook-Secret") or request.args.get("secret")
+    header_secret = request.headers.get("X-Webhook-Secret")
+    query_secret  = request.args.get("secret")
+    provided = header_secret or query_secret
+    if query_secret and not header_secret:
+        # Deprecated: secret in query string leaks via access logs and proxy history.
+        # Migrate to the X-Webhook-Secret header.
+        log.warning("Webhook secret passed via ?secret= query param from %s"
+                    " — migrate to X-Webhook-Secret header", request.remote_addr)
     if provided != WEBHOOK_SECRET:
         log.warning("Rejected webhook with bad/missing secret from %s", request.remote_addr)
         abort(401)
@@ -1843,8 +1850,12 @@ def ui_api_users():
 
 @app.post("/ui/api/users/create")
 def ui_api_users_create():
-    # Bootstrap: if no users exist yet, allow creating the first one (forced to admin)
-    if db.user_count() == 0:
+    import settings as _settings
+    # Bootstrap: only allow unauthenticated first-admin creation when no users exist AND
+    # SETUP_COMPLETE has never been set. This prevents re-opening the window if all
+    # users are somehow deleted after initial setup.
+    setup_done = bool(_settings.get("SETUP_COMPLETE", False))
+    if db.user_count() == 0 and not setup_done:
         p = request.get_json(silent=True) or {}
         username = (p.get("username") or "").strip()
         password = p.get("password") or ""
@@ -1853,6 +1864,8 @@ def ui_api_users_create():
         try:
             uid = auth.create_user_account(username, password, role="admin",
                                             auto_approve=True)
+            _settings.set("SETUP_COMPLETE", True)
+            log.info("Bootstrap: first admin '%s' created, setup_complete=true", username)
             return jsonify(ok=True, user_id=uid, message="first admin created")
         except ValueError as exc:
             return jsonify(error=str(exc)), 400

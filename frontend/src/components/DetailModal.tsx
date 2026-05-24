@@ -138,7 +138,7 @@ export default function DetailModal({
 
   // Reset state when modal opens fresh
   useEffect(() => {
-    if (open) { setAddStatus('idle'); setShowTrailer(false); }
+    if (open) { setAddStatus('idle'); setShowTrailer(false); setShowPlayer(false); }
   }, [open, tmdbId]);
 
   // Esc to close
