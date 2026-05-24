@@ -173,17 +173,61 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
   useEffect(() => {
     if (!videoRef.current || !subtitleUrl) return
     const video = videoRef.current
-    // Remove any previous external track
-    Array.from(video.querySelectorAll('track[label="external"]')).forEach(t => t.remove())
-    const track = document.createElement('track')
-    track.kind  = 'subtitles'
-    track.label = 'external'
-    track.src   = subtitleUrl
-    track.addEventListener('load', () => {
-      // Force the track visible after it finishes loading
-      if (track.track) track.track.mode = 'showing'
-    })
-    video.appendChild(track)
+
+    // Remove any TextTracks we added previously
+    const existing = Array.from(video.textTracks).find(t => t.label === 'external')
+    if (existing) existing.mode = 'disabled'
+
+    // Fetch the VTT and inject cues directly into a TextTrack.
+    // This approach works with HLS.js (which uses a blob src) and avoids
+    // the unreliable <track> load event across browsers.
+    fetch(subtitleUrl)
+      .then(r => r.text())
+      .then(vtt => {
+        // Remove old <track> elements
+        Array.from(video.querySelectorAll('track[label="external"]')).forEach(t => t.remove())
+
+        const el = document.createElement('track')
+        el.kind    = 'subtitles'
+        el.label   = 'external'
+        el.default = true
+        video.appendChild(el)
+
+        const tt = el.track
+        tt.mode = 'showing'
+
+        // Parse VTT cues and add them to the track
+        const lines = vtt.split('\n')
+        let i = 0
+        while (i < lines.length) {
+          const line = lines[i].trim()
+          // Cue timing line: 00:00:01.000 --> 00:00:04.000
+          if (line.includes('-->')) {
+            const [startStr, endStr] = line.split('-->').map(s => s.trim())
+            const toSec = (t: string) => {
+              const parts = t.replace(',', '.').split(':').map(Number)
+              return parts.length === 3
+                ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+                : parts[0] * 60 + parts[1]
+            }
+            const start = toSec(startStr)
+            const end   = toSec(endStr)
+            i++
+            const textLines: string[] = []
+            while (i < lines.length && lines[i].trim() !== '') {
+              textLines.push(lines[i])
+              i++
+            }
+            const text = textLines.join('\n')
+            if (text) {
+              try { tt.addCue(new VTTCue(start, end, text)) } catch {}
+            }
+          } else {
+            i++
+          }
+        }
+      })
+      .catch(err => console.warn('subtitle load failed', err))
   }, [subtitleUrl])
 
   // Derived after status is declared — info_hash is segment [2] of /stream/<hash>/hls/...
