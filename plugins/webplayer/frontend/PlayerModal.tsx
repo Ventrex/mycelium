@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import SubtitlePicker from './SubtitlePicker'
-import { api } from '../api'
+import { api } from '../../api'
 
 const STEP_LABELS: Record<string, string> = {
   searching:     'Looking for a web-compatible version…',

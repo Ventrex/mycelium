@@ -1266,13 +1266,17 @@ def list_users() -> list[dict]:
 def update_user(user_id: int, **fields) -> None:
     if not fields:
         return
-    allowed = {"password_hash", "role", "quota_monthly", "auto_approve", "enabled", "region"}
-    cols = [k for k in fields if k in allowed]
-    if not cols:
-        return
-    sql = "UPDATE users SET " + ", ".join(f"{c}=?" for c in cols) + " WHERE id=?"
-    vals = [fields[c] for c in cols] + [user_id]
+    # Core columns always allowed; plugin migrations may add extra columns —
+    # allow any column that actually exists in the table so plugin fields work.
+    _CORE = {"password_hash", "role", "quota_monthly", "auto_approve", "enabled", "region"}
     with _connect() as conn:
+        db_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+        allowed = _CORE | db_cols
+        cols = [k for k in fields if k in allowed]
+        if not cols:
+            return
+        sql = "UPDATE users SET " + ", ".join(f"{c}=?" for c in cols) + " WHERE id=?"
+        vals = [fields[c] for c in cols] + [user_id]
         conn.execute(sql, vals)
 
 
