@@ -238,7 +238,7 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div className="relative w-full max-w-5xl" onClick={e => e.stopPropagation()}>
