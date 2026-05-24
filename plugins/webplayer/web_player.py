@@ -528,7 +528,7 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
 
         # Wait for first video segments before writing master playlist
         _wait_segments_pattern(tmp_dir, f"seg_v*.{seg_ext}",
-                               SEGMENT_WAIT_COUNT, seg_timeout)
+                               SEGMENT_WAIT_COUNT, SEGMENT_WAIT_TIMEOUT)
 
         # Write master.m3u8
         lines  = ["#EXTM3U"]
