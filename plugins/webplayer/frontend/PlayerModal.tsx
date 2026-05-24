@@ -275,27 +275,6 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
 
                 {sessionKey && <SubtitlePicker token={sessionKey} onSelect={setSubtitleUrl} />}
 
-                {/* Native player button — opens the stream in IINA/mpv/VLC
-                    via the mycelium:// URL scheme (install once from the link). */}
-                {status?.cdn_url && (
-                  <span className="flex items-center gap-1">
-                    <a
-                      href={`mycelium://play?url=${encodeURIComponent(status.cdn_url)}`}
-                      title="Open in IINA / mpv / VLC via the Mycelium native player"
-                      className="px-2 py-0.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-xs whitespace-nowrap"
-                    >
-                      ▶ Native player
-                    </a>
-                    <a
-                      href="/ui/api/web-player/install-macos"
-                      title="Download macOS installer for the mycelium:// URL scheme"
-                      className="text-zinc-600 hover:text-zinc-400 text-xs"
-                      download
-                    >
-                      install
-                    </a>
-                  </span>
-                )}
 
                 {fileInfo.duration_s > 0 && (
                   <span className="text-zinc-500">
