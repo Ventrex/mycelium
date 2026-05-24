@@ -81,10 +81,18 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
     const video = videoRef.current
 
     if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true })
-      hls.loadSource(status.stream_url)
+      const hls = new Hls({ enableWorker: false })
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (data.fatal) {
+          console.error('HLS fatal error:', data.type, data.details, data)
+        }
+      })
       hls.attachMedia(video)
+      hls.loadSource(status.stream_url)
       hlsRef.current = hls
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari: native HLS
+      video.src = status.stream_url
     } else {
       video.src = status.stream_url
     }
