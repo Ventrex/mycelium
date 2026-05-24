@@ -35,19 +35,16 @@ _TEXT_SUB_CODECS  = {"subrip", "ass", "ssa", "webvtt", "mov_text", "srt"}
 
 def _web_score(stream: torrentio.TorrentioStream) -> int:
     blob = f"{stream.name} {stream.title}"
-    if stream.quality == "2160p":          return -1   # 4K: too large + browser issues
-    if torrentio._DV_RE.search(blob):     return -1   # Dolby Vision: browser-incompatible
+    if stream.quality == "2160p":         return -1   # 4K: too large + browser issues
+    if torrentio._DV_RE.search(blob):    return -1   # Dolby Vision: browser-incompatible
 
     is_hevc = bool(torrentio._HEVC_RE.search(blob))
 
-    # Hard size caps.
-    # H.264: 15 GB default (covers all common WEB-DL releases).
-    # HEVC:  4 GB default — larger x265 files need heavy CPU transcoding
-    #        on a NAS and are rarely worth it vs a smaller H.264 pick.
+    # Hard size caps. HEVC gets a lower limit because transcoding is CPU-heavy;
+    # only small files (series episodes, compact films) are worth it.
     max_gb      = _settings.get("WEB_PLAYER_MAX_SIZE_GB", 15) or 15
     max_gb_hevc = _settings.get("WEB_PLAYER_MAX_SIZE_HEVC_GB", 4) or 4
-    hard_limit  = max_gb_hevc if is_hevc else max_gb
-    if 0 < stream.size_gb > hard_limit:
+    if 0 < stream.size_gb > (max_gb_hevc if is_hevc else max_gb):
         return -1
 
     score = 0
@@ -64,8 +61,8 @@ def _web_score(stream: torrentio.TorrentioStream) -> int:
     elif stream.size_gb     < 8:    score += 18
     elif stream.size_gb     < 12:   score += 8
 
-    # HEVC needs software video transcoding (CPU-intensive).
-    # A tiny 300 MB episode still wins; a 10 GB HEVC movie does not.
+    # HEVC needs transcoding: penalise proportional to size so tiny episodes
+    # still win but large HEVC files lose to a same-size H.264 pick.
     if is_hevc:
         penalty = max(5, min(50, int(stream.size_gb * 8)))
         score -= penalty
@@ -214,7 +211,7 @@ def _run_job(job: PrepareJob) -> None:
         session = _start_hls(token, cdn_url, file_info, tmp_dir)
 
         # For multi-audio, _start_hls already waited for video segments.
-        # For single-audio, wait here. Allow more time when transcoding video.
+        # For single-audio, wait here.
         if not multi_audio:
             if not _wait_segments(tmp_dir, SEGMENT_WAIT_COUNT, seg_timeout):
                 session.proc.terminate()
@@ -376,17 +373,16 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
     audio_tracks  = file_info["audio_tracks"]
     multi_audio   = len(audio_tracks) > 1
 
-    # Decide whether video can be stream-copied or needs transcoding.
-    # HEVC / AV1 / VP9 are not natively supported in HLS mpegts by browsers;
-    # transcode to H.264 with ultrafast preset (good speed, acceptable quality).
+    # Decide whether video needs transcoding.
+    # HEVC / AV1 / VP9 are not playable in browser HLS; transcode to H.264.
+    # veryfast preset gives good quality at near-realtime speed on a NAS CPU.
     _NEEDS_TRANSCODE = {"hevc", "h265", "av1", "vp9", "vp8"}
     video_codec      = (file_info.get("video_codec") or "h264").lower()
     needs_transcode  = video_codec in _NEEDS_TRANSCODE
-    v_enc            = (
-        ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+    v_enc       = (
+        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
         if needs_transcode else ["-c:v", "copy"]
     )
-    # Allow more time for first segments when encoding video.
     seg_timeout = 180 if needs_transcode else SEGMENT_WAIT_TIMEOUT
 
     # -ss BEFORE -i = fast input seeking (jumps to nearest keyframe).
