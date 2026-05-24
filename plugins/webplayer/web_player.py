@@ -28,7 +28,7 @@ SESSION_IDLE_CLEANUP = 1800
 
 _BROWSER_AUDIO_OK    = {"aac"}   # vorbis/opus not reliable in mpegts HLS
 _NO_BROWSER_VIDEO_RE = re.compile(r"\b(av1|vp9|vp8)\b", re.IGNORECASE)
-_HDR_NAME_RE         = re.compile(r"\b(hdr10?\+?|hlg|pq10)\b", re.IGNORECASE)
+_HDR_NAME_RE         = re.compile(r"\bhdr10\+|\bhdr10plus\b|\bhdr10\b|\bhdr\b|\bhlg\b|\bpq10\b", re.IGNORECASE)
 _AAC_SAMPLE_RATE     = "48000"   # browsers require consistent sample rate in TS
 _TEXT_SUB_CODECS  = {"subrip", "ass", "ssa", "webvtt", "mov_text", "srt"}
 
