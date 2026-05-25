@@ -561,12 +561,29 @@ Please don't open an issue asking for piracy support. This project is for legiti
 
 ---
 
+## 📺 Compatible media servers
+
+`.strm` files are a simple standard — any media server that can open a URL as a stream will work:
+
+| Media server | Works | Notes |
+|---|:---:|---|
+| **Jellyfin** | ✅ | Primary target, fully tested |
+| **Emby** | ✅ | `.strm` support built-in |
+| **Kodi** | ✅ | Add the `.strm` folder as a source |
+| **Plex** | ✅ | Via optional WebDAV (see above) |
+| **Infuse** | ✅ | Via WebDAV |
+
+---
+
 ## 📜 License
 
 [MIT](LICENSE). Do whatever, just don't blame me if your library disappears.
 
+If you use Mycelium or build on top of it, a mention or link back to [github.com/corveck79/mycelium](https://github.com/corveck79/mycelium) is appreciated — not required, just nice.
+
 ## 🙏 Credits
 
+- [corveck79](https://github.com/corveck79) for building and maintaining Mycelium.
 - [elfhosted](https://elfhosted.com) for the CatBox concept that inspired the lazy-materialize mode.
 - [TorBox](https://torbox.app) for being a reasonably-priced debrid that doesn't suck.
 - [Jellyseerr](https://jellyseerr.dev) and [Jellyfin](https://jellyfin.org) for the rest of the ecosystem.
