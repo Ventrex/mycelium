@@ -15,7 +15,10 @@
 <p>
   One container that turns watchlist clicks into Jellyfin-ready streams via
   <a href="https://torbox.app">TorBox</a> or <a href="https://real-debrid.com">RealDebrid</a> -
-  typically under 30 seconds for cached releases, with zero local storage.
+  typically under 30 seconds for cached releases, with zero local storage.<br>
+  Inspired by <a href="https://docs.elfhosted.com/app/catbox/">elfhosted CatBox</a>:
+  torrents are added on-demand at playback, released after idle time.
+  Your library can be as large as you want.
 </p>
 
 <p>
@@ -418,7 +421,6 @@ If you use Mycelium or build on top of it, a mention or link back to [github.com
 
 ## 🙏 Credits
 
-- [corveck79](https://github.com/corveck79) for building and maintaining Mycelium
 - [elfhosted](https://elfhosted.com) for the CatBox concept that inspired the lazy-materialize mode
 - [TorBox](https://torbox.app) for being a solid debrid service
 - [Jellyfin](https://jellyfin.org), [Jellyseerr](https://jellyseerr.dev), [Zilean](https://github.com/iPromKnight/zilean), [Torrentio](https://torrentio.strem.fun) for the ecosystem
