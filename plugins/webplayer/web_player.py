@@ -153,7 +153,7 @@ def _get_cdn_url(stream: torrentio.TorrentioStream) -> str | None:
     item = torbox.find_by_hash(stream.info_hash)
 
     if item is None:
-        # Not in library yet — add it (instant because caller verified cache).
+        # Not in library yet  -  add it (instant because caller verified cache).
         log.info("web_player: adding cached magnet hash=%s", stream.info_hash)
         try:
             result     = torbox.add_magnet(stream.magnet, reason="web_player")
@@ -333,7 +333,7 @@ def _run_job(job: PrepareJob) -> None:
                 job.error  = "Timeout: FFmpeg produced no segments."
                 return
 
-        # Wait for subtitles (max 15s) — usually done by the time FFmpeg is ready.
+        # Wait for subtitles (max 15s)  -  usually done by the time FFmpeg is ready.
         sub_thread.join(timeout=15)
 
         job.status     = JobStatus.READY
@@ -344,7 +344,7 @@ def _run_job(job: PrepareJob) -> None:
     except Exception:
         log.exception("web_player: prepare job %s crashed", job.job_id)
         job.status = JobStatus.ERROR
-        job.error  = "Internal error — check server logs."
+        job.error  = "Internal error  -  check server logs."
 
 
 # ── FFprobe ────────────────────────────────────────────────────────────────────
@@ -501,18 +501,22 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
     audio_tracks = file_info["audio_tracks"]
     multi_audio  = len(audio_tracks) > 1
 
-    # Always copy video — never transcode.
-    # HDR is filtered at selection time (_web_score), AV1/VP9/VP8 likewise.
-    # HEVC -> fMP4 segments (Safari native; Chrome/Edge hardware decode).
-    # H.264 -> mpegts segments (universally supported).
-    _FMP4_CODECS = {"hevc", "h265"}
-    video_codec  = (file_info.get("video_codec") or "h264").lower()
-    use_fmp4     = video_codec in _FMP4_CODECS
+    # Video encoding strategy:
+    # H.264:      copy into mpegts (zero CPU, universally supported).
+    # HEVC/other: transcode to H.264 mpegts (Firefox has no HEVC, fMP4 unreliable).
+    #             preset fast + crf 22 gives good quality at moderate CPU cost.
+    video_codec = (file_info.get("video_codec") or "h264").lower()
+    _H264_OK    = {"h264", "avc"}
+    use_fmp4    = False
+    seg_type    = "mpegts"
+    seg_ext     = "ts"
 
-    v_enc      = ["-c:v", "copy"]
-    seg_type   = "fmp4" if use_fmp4 else "mpegts"
-    seg_ext    = "m4s"  if use_fmp4 else "ts"
-    mode_label = "fmp4-copy" if use_fmp4 else "ts-copy"
+    if video_codec in _H264_OK:
+        v_enc      = ["-c:v", "copy"]
+        mode_label = "ts-copy"
+    else:
+        v_enc      = ["-c:v", "libx264", "-preset", "fast", "-crf", "22"]
+        mode_label = f"ts-x264(from {video_codec})"
 
     # -ss BEFORE -i = fast keyframe seek.
     input_args = (["-ss", f"{seek_offset:.3f}"] if seek_offset > 0 else []) + ["-i", cdn_url]
@@ -530,8 +534,6 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
             "-hls_segment_type", seg_type,
             "-hls_segment_filename", str(tmp_dir / f"seg_v%05d.{seg_ext}"),
         ]
-        if use_fmp4:
-            cmd += ["-hls_fmp4_init_filename", "init_v.mp4"]
         cmd.append(str(tmp_dir / "video.m3u8"))
 
         # Outputs 1…N: one audio stream each
@@ -543,8 +545,6 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
                 "-hls_segment_type", seg_type,
                 "-hls_segment_filename", str(tmp_dir / f"seg_a{i}_%05d.{seg_ext}"),
             ]
-            if use_fmp4:
-                cmd += ["-hls_fmp4_init_filename", f"init_a{i}.mp4"]
             cmd.append(str(tmp_dir / f"audio_{i}.m3u8"))
 
         log.info("web_player: FFmpeg multi-audio/%s token=%s seek=%.1f",
@@ -593,8 +593,6 @@ def _start_hls(token: str, cdn_url: str, file_info: dict, tmp_dir: Path,
             "-hls_segment_type", seg_type,
             "-hls_segment_filename", str(tmp_dir / f"seg%05d.{seg_ext}"),
         ]
-        if use_fmp4:
-            cmd += ["-hls_fmp4_init_filename", "init.mp4"]
         cmd.append(str(tmp_dir / "playlist.m3u8"))
 
         log.info("web_player: FFmpeg single-audio/%s token=%s seek=%.1f",
