@@ -26,6 +26,7 @@
 <p>
   <a href="#-quick-start">Quick start</a> ·
   <a href="#-features">Features</a> ·
+  <a href="#-mycelium-spore-experimental--work-in-progress">Spore</a> ·
   <a href="#-full-vs-lite">Full vs Lite</a> ·
   <a href="#-architecture">Architecture</a> ·
   <a href="#%EF%B8%8F-configuration">Configuration</a> ·
