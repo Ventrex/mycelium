@@ -155,6 +155,17 @@ export const api = {
       body: JSON.stringify({ region }),
     }),
 
+  // User preferences
+  setPreferences: (prefs: Record<string, boolean>) =>
+    http<{ ok: boolean }>('/ui/api/me/preferences', {
+      method: 'POST',
+      body: JSON.stringify(prefs),
+    }),
+
+  // Jellyfin item lookup
+  jellyfinItem: (imdb_id: string) =>
+    http<{ jellyfin_id: string | null; jellyfin_url: string | null }>(`/ui/api/jellyfin/item?imdb_id=${encodeURIComponent(imdb_id)}`),
+
   // Library / dashboard
   session: () => http<SessionInfo>('/ui/api/session'),
   stats: () => http<any>('/ui/api/stats'),

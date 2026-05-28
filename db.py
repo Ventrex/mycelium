@@ -378,6 +378,9 @@ def _migrate() -> None:
         if "region" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN region TEXT NOT NULL DEFAULT 'NL'")
             log.info("Migration: added users.region")
+        if "library_click_jellyfin" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN library_click_jellyfin INTEGER NOT NULL DEFAULT 0")
+            log.info("Migration: added users.library_click_jellyfin")
 
         conn.commit()
 
@@ -812,6 +815,19 @@ def set_poster(imdb_id: str, poster_path: str | None) -> None:
             (imdb_id, poster_path),
         )
         conn.commit()
+
+
+def get_posters_batch(imdb_ids: list[str]) -> dict[str, str | None]:
+    """Return poster_path for each imdb_id from the poster_cache, as a dict."""
+    if not imdb_ids:
+        return {}
+    ph = ",".join("?" * len(imdb_ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT imdb_id, poster_path FROM poster_cache WHERE imdb_id IN ({ph})",
+            imdb_ids,
+        ).fetchall()
+    return {r["imdb_id"]: r["poster_path"] for r in rows}
 
 
 # ── virtual_items (Catbox mode) ───────────────────────────────────────────────

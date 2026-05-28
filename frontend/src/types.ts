@@ -83,7 +83,15 @@ export interface UserRequest {
 
 export interface SessionInfo {
   authenticated: boolean;
-  user?: { id: number; username: string; role: string; auto_approve: boolean; region: string } | null;
+  jellyfin_url?: string | null;
+  user?: {
+    id: number;
+    username: string;
+    role: string;
+    auto_approve: boolean;
+    region: string;
+    library_click_jellyfin?: boolean;
+  } | null;
 }
 
 export interface WantedMovie {

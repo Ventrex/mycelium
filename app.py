@@ -2187,11 +2187,18 @@ def ui_api_library_movies():
         items.append({
             "title": r.get("title") or "Unknown",
             "imdb_id": imdb,
+            "tmdb_id": r.get("tmdb_id"),
             "quality": r.get("quality"),
             "status": r.get("status"),
             "source": r.get("source"),
             "created_at": r.get("created_at"),
+            "year": r.get("year"),
         })
+    # Enrich with cached poster paths (single batch query)
+    imdb_ids = [it["imdb_id"] for it in items if it.get("imdb_id")]
+    poster_map = db.get_posters_batch(imdb_ids)
+    for it in items:
+        it["poster_path"] = poster_map.get(it["imdb_id"])
     return jsonify(items=items)
 
 
@@ -2300,15 +2307,18 @@ def ui_api_session():
     rec = auth.current_user_record()
     if not rec:
         return jsonify(authenticated=False, user=None)
+    import settings as _settings
     user: dict = {
         "id": rec.get("id"),
         "username": rec.get("username"),
         "role": rec.get("role"),
         "auto_approve": bool(rec.get("auto_approve")),
         "region": rec.get("region", "NL"),
+        "library_click_jellyfin": bool(rec.get("library_click_jellyfin")),
     }
     user.update(plugin_loader.session_fields(rec))
-    return jsonify(authenticated=True, user=user)
+    jellyfin_url = (_settings.get("JELLYFIN_URL") or cfg.JELLYFIN_URL or "").rstrip("/")
+    return jsonify(authenticated=True, user=user, jellyfin_url=jellyfin_url or None)
 
 
 @app.get("/ui/api/plugins")
@@ -2410,6 +2420,60 @@ def ui_api_me_region():
         return jsonify(error="region required"), 400
     db.update_user(rec["id"], region=region)
     return jsonify(ok=True, region=region)
+
+
+@app.post("/ui/api/me/preferences")
+@auth.require_auth
+def ui_api_me_preferences():
+    """Let users update their own UI preferences."""
+    rec = auth.current_user_record()
+    if not rec:
+        return jsonify(error="not authenticated"), 401
+    p = request.get_json(silent=True) or {}
+    _ALLOWED = {"library_click_jellyfin"}
+    fields = {k: (1 if v else 0) for k, v in p.items() if k in _ALLOWED}
+    if not fields:
+        return jsonify(error="no valid fields"), 400
+    db.update_user(rec["id"], **fields)
+    return jsonify(ok=True)
+
+
+# Cache Jellyfin item IDs: imdb_id -> jellyfin_item_id (or None if not found)
+_jellyfin_item_cache: dict[str, str | None] = {}
+
+
+@app.get("/ui/api/jellyfin/item")
+@auth.require_auth
+def ui_api_jellyfin_item():
+    """Look up Jellyfin item ID for a given IMDB id. Result is cached in memory."""
+    import settings as _settings
+    imdb_id = request.args.get("imdb_id", "").strip()
+    if not imdb_id:
+        return jsonify(error="imdb_id required"), 400
+    if imdb_id in _jellyfin_item_cache:
+        jid = _jellyfin_item_cache[imdb_id]
+        jurl = (_settings.get("JELLYFIN_URL") or cfg.JELLYFIN_URL or "").rstrip("/")
+        return jsonify(jellyfin_id=jid, jellyfin_url=jurl or None)
+    jurl = (_settings.get("JELLYFIN_URL") or cfg.JELLYFIN_URL or "").rstrip("/")
+    jkey = _settings.get("JELLYFIN_API_KEY") or cfg.JELLYFIN_API_KEY or ""
+    if not jurl or not jkey:
+        return jsonify(jellyfin_id=None, jellyfin_url=None)
+    try:
+        import requests as _req
+        resp = _req.get(
+            f"{jurl}/Items",
+            params={"AnyProviderIdEquals": f"imdb.{imdb_id}", "includeItemTypes": "Movie,Series"},
+            headers={"X-Emby-Token": jkey},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        items = (resp.json() or {}).get("Items") or []
+        jid = items[0]["Id"] if items else None
+    except Exception as exc:
+        log.debug("Jellyfin item lookup %s failed: %s", imdb_id, exc)
+        return jsonify(jellyfin_id=None, jellyfin_url=jurl or None)
+    _jellyfin_item_cache[imdb_id] = jid
+    return jsonify(jellyfin_id=jid, jellyfin_url=jurl or None)
 
 
 @app.post("/ui/api/users/<int:user_id>/delete")

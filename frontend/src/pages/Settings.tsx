@@ -16,6 +16,7 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
+      <PreferencesCard />
 
       {visiblePlugins.length > 0 && (
         <>
@@ -100,6 +101,51 @@ function PluginUserFieldsSection({ plugin }: { plugin: ReturnType<typeof usePlug
     </div>
   );
 }
+
+function PreferencesCard() {
+  const qc = useQueryClient();
+  const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session });
+  const clickJellyfin = !!(session?.user as any)?.library_click_jellyfin;
+  const jellyfinUrl = session?.jellyfin_url;
+
+  const mutation = useMutation({
+    mutationFn: (prefs: Record<string, boolean>) => api.setPreferences(prefs),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
+  });
+
+  const toggle = () => mutation.mutate({ library_click_jellyfin: !clickJellyfin });
+
+  return (
+    <div className="bg-card rounded-lg border border-border p-6">
+      <h2 className="text-base font-bold mb-1">Preferences</h2>
+      <p className="text-muted text-xs mb-4">Personalise how the app behaves for your account.</p>
+      <div className="space-y-3">
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <div className="mt-0.5">
+            <div
+              onClick={toggle}
+              className={`w-10 h-5 rounded-full transition-colors flex items-center px-0.5 cursor-pointer
+                ${clickJellyfin ? 'bg-accent' : 'bg-border'}`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform
+                ${clickJellyfin ? 'translate-x-5' : 'translate-x-0'}`} />
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-medium">Open library items in Jellyfin</div>
+            <div className="text-xs text-muted mt-0.5">
+              Clicking a poster in the Library tab opens the item in Jellyfin web instead of showing the detail modal.
+              {!jellyfinUrl && (
+                <span className="text-yellow-400 ml-1">(Jellyfin URL not configured)</span>
+              )}
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 
 function ChangePasswordCard() {
   const [current, setCurrent] = useState('');
