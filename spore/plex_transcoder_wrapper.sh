@@ -29,14 +29,18 @@ if [ -z "$EAE_ROOT" ] && [ -n "$_pms_base" ]; then
         export EAE_ROOT="$_eae_candidate"
         echo "$(date '+%H:%M:%S') WRAP EAE_ROOT exists: $EAE_ROOT" >> "$SPORE_LOG"
     else
-        # EAE hasn't created it yet -- create it ourselves.
-        # EAE watches the parent dir via inotify and will pick up the new directory.
-        mkdir -p "$_eae_candidate" 2>/dev/null
+        # EAE hasn't created it yet -- create it ourselves including the
+        # subdirectories EAE needs. EAE watches the parent via inotify and
+        # will pick up the directories and set up watches on them.
+        mkdir -p \
+            "$_eae_candidate/Convert to WAV (to 8ch or less)" \
+            "$_eae_candidate/Convert to WAV (stereo)" \
+            2>/dev/null
         if [ -d "$_eae_candidate" ]; then
             export EAE_ROOT="$_eae_candidate"
-            echo "$(date '+%H:%M:%S') WRAP EAE_ROOT created: $EAE_ROOT" >> "$SPORE_LOG"
+            echo "$(date '+%H:%M:%S') WRAP EAE_ROOT created with subdirs: $EAE_ROOT" >> "$SPORE_LOG"
         else
-            echo "$(date '+%H:%M:%S') WRAP WARNING: mkdir failed for $EAE_ROOT" >> "$SPORE_LOG"
+            echo "$(date '+%H:%M:%S') WRAP WARNING: mkdir failed for $_eae_candidate" >> "$SPORE_LOG"
         fi
     fi
 fi
