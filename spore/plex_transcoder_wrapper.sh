@@ -12,52 +12,9 @@ echo "$(date '+%H:%M:%S') WRAP started" >> "$SPORE_LOG"
 # this env var when spawning the transcoder, but it is sometimes missing
 # (known Plex bug). Discover and export it here as a fallback so EAE can init.
 echo "$(date '+%H:%M:%S') WRAP EAE_ROOT=${EAE_ROOT:-(not set)}" >> "$SPORE_LOG"
-# Find the pms-xxx base directory under /run/plex-temp
-_pms_base=""
-for _d in /run/plex-temp/pms-*/ /tmp/pms-*/; do
-    [ -d "$_d" ] && _pms_base="$_d" && break
-done
-echo "$(date '+%H:%M:%S') WRAP pms_base=${_pms_base:-(not found)}" >> "$SPORE_LOG"
-if [ -n "$_pms_base" ]; then
-    echo "$(date '+%H:%M:%S') WRAP pms contents: $(ls "$_pms_base" 2>&1 | tr '\n' ' ')" >> "$SPORE_LOG"
-fi
-
-if [ -z "$EAE_ROOT" ]; then
-    # EAE creates its watchfolder asynchronously after Plex starts.
-    # Poll until it appears (max 45 seconds). Do NOT create it ourselves --
-    # EAE sets up inotify watches only on directories it creates itself.
-    _poll=0
-    while [ "$_poll" -lt 45 ]; do
-        for _d in /run/plex-temp/pms-*/EasyAudioEncoder /tmp/pms-*/EasyAudioEncoder; do
-            if [ -d "$_d" ]; then
-                export EAE_ROOT="$_d"
-                echo "$(date '+%H:%M:%S') WRAP EAE_ROOT found after ${_poll}s: $EAE_ROOT" >> "$SPORE_LOG"
-                break 2
-            fi
-        done
-        sleep 1
-        _poll=$((_poll + 1))
-    done
-    if [ -z "$EAE_ROOT" ]; then
-        echo "$(date '+%H:%M:%S') WRAP WARNING: EAE watchfolder not found after 45s" >> "$SPORE_LOG"
-    fi
-fi
-if [ -z "$EAE_ROOT" ]; then
-    # Fallback: read from Plex Media Server process environment
-    for _pid in $(pgrep -f "Plex Media Server" 2>/dev/null | head -5); do
-        [ -r "/proc/$_pid/environ" ] || continue
-        _val=$(tr '\0' '\n' < "/proc/$_pid/environ" 2>/dev/null \
-               | grep "^EAE_ROOT=" | cut -d= -f2- | head -1)
-        if [ -n "$_val" ] && [ -d "$_val" ]; then
-            export EAE_ROOT="$_val"
-            echo "$(date '+%H:%M:%S') WRAP EAE_ROOT from PMS pid=$_pid: $EAE_ROOT" >> "$SPORE_LOG"
-            break
-        fi
-    done
-fi
-if [ -z "$EAE_ROOT" ]; then
-    echo "$(date '+%H:%M:%S') WRAP WARNING: EAE_ROOT still not set" >> "$SPORE_LOG"
-fi
+# EAE_ROOT discovery is deferred to after minfo is read -- only needed for
+# EAC3/TrueHD audio (codecs that route through EasyAudioEncoder).
+# For AAC/AC3/other codecs we skip the poll entirely to avoid delaying startup.
 
 newargs=()
 found_i=0
@@ -156,6 +113,31 @@ if [ "$spore_replaced" = "1" ]; then
     if [ -f "$spore_minfo" ]; then
         cdn_audio_codec=$(grep "^cdn_audio_codec=" "$spore_minfo" | head -1 | cut -d= -f2)
     fi
+    # ── EAE_ROOT discovery (only for EAC3/TrueHD) ─────────────────────────────
+    # EAE IPC only initialises when Plex Transcoder runs with a local file.
+    # With an HTTP URL (-i http://...) EAE never creates its watchfolder, so
+    # polling is futile. We still attempt a quick lookup via the PMS process
+    # environment in case EAE was already initialised by a prior local session.
+    # Only relevant for codecs that route through EAE (eac3, truehd).
+    case "$cdn_audio_codec" in eac3|truehd|eac3_eae|truehd_eae)
+        if [ -z "$EAE_ROOT" ]; then
+            for _pid in $(pgrep -f "Plex Media Server" 2>/dev/null | head -5); do
+                [ -r "/proc/$_pid/environ" ] || continue
+                _val=$(tr '\0' '\n' < "/proc/$_pid/environ" 2>/dev/null \
+                       | grep "^EAE_ROOT=" | cut -d= -f2- | head -1)
+                if [ -n "$_val" ] && [ -d "$_val" ]; then
+                    export EAE_ROOT="$_val"
+                    echo "$(date '+%H:%M:%S') WRAP EAE_ROOT from PMS env: $EAE_ROOT" >> "$SPORE_LOG"
+                    break
+                fi
+            done
+        fi
+        if [ -z "$EAE_ROOT" ]; then
+            echo "$(date '+%H:%M:%S') WRAP WARNING: EAE_ROOT not set for $cdn_audio_codec -- EAE will likely fail" >> "$SPORE_LOG"
+        fi
+        ;;
+    esac
+
     if [ -n "$cdn_audio_codec" ]; then
         i_pos_n=-1
         for idx in "${!newargs[@]}"; do
@@ -212,24 +194,6 @@ if [ "$spore_replaced" = "1" ]; then
     # -max_muxing_queue_size  : bigger buffer for audio seek-sync recovery
     last="${newargs[-1]}"
     unset 'newargs[-1]'
-    # Replace -loglevel quiet / -loglevel_plex error with verbose so we can see
-    # FFmpeg errors in the Plex log. TEMPORARY DEBUG -- remove after fix confirmed.
-    replaced_loglevel=()
-    skip_loglevel=0
-    for arg in "${newargs[@]}"; do
-        if [ "$skip_loglevel" = "1" ]; then
-            skip_loglevel=0
-            replaced_loglevel+=("verbose")
-            continue
-        fi
-        if [[ "$arg" == "-loglevel" || "$arg" == "-loglevel_plex" ]]; then
-            skip_loglevel=1
-            replaced_loglevel+=("$arg")
-            continue
-        fi
-        replaced_loglevel+=("$arg")
-    done
-    newargs=("${replaced_loglevel[@]}")
     newargs+=("-max_interleave_delta" "0" "-max_muxing_queue_size" "4096" "$last")
     echo "SPORE-WRAP: injected muxer error-tolerance flags" >&2
     echo "SPORE-WRAP: full command: ${newargs[*]}" >&2
