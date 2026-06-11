@@ -24,7 +24,7 @@ import zilean
 log = logging.getLogger(__name__)
 
 PLAYER_TMP_DIR       = Path("/tmp/mycelium-player")
-SEGMENT_WAIT_COUNT   = 3
+SEGMENT_WAIT_COUNT   = 5
 SEGMENT_WAIT_TIMEOUT = 90
 SESSION_IDLE_CLEANUP = 1800
 CDN_URL_MAX_AGE_S    = 1800   # refresh TorBox signed URL after 30 minutes

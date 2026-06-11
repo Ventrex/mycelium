@@ -140,7 +140,13 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
       }
       return
     } else if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: false })
+      const hls = new Hls({
+        enableWorker:        false,
+        maxBufferLength:     60,
+        maxMaxBufferLength:  120,
+        maxBufferSize:       60 * 1000 * 1000,
+        highBufferWatchdogPeriod: 10,
+      })
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return
         console.error('HLS fatal error:', data.type, data.details, data)
@@ -224,7 +230,13 @@ export default function PlayerModal({ imdb_id, media_type, title, season, episod
   useEffect(() => {
     if (!hlsReady || !videoRef.current || !hlsUrl) return
     const video = videoRef.current
-    const hls = new Hls({ enableWorker: false })
+    const hls = new Hls({
+      enableWorker:        false,
+      maxBufferLength:     60,
+      maxMaxBufferLength:  120,
+      maxBufferSize:       60 * 1000 * 1000,
+      highBufferWatchdogPeriod: 10,
+    })
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal) return
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError()

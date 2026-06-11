@@ -1,6 +1,6 @@
 import db
 import auth
-from flask import Blueprint, abort, jsonify, request, send_file, Response
+from flask import Blueprint, abort, jsonify, redirect, request, send_file, Response
 from flask import session as flask_session
 from . import web_player
 
@@ -23,6 +23,7 @@ def web_player_prepare():
         media_type = d["media_type"],
         season     = d.get("season"),
         episode    = d.get("episode"),
+        user_agent = request.headers.get("User-Agent", ""),
     )
     return jsonify(job_id=job_id)
 
@@ -67,6 +68,42 @@ def stream_hls_file(token: str, filename: str):
     if filename.endswith(".mp4"):
         return send_file(p, mimetype="video/mp4")
     abort(400)
+
+
+@bp.get("/stream/<token>/direct")
+def stream_direct(token: str):
+    """Redirect to the TorBox CDN URL for direct H264 playback."""
+    s = web_player.get_direct_session(token)
+    if not s:
+        abort(404)
+    s.touch()
+    return redirect(s.cdn_url, code=302)
+
+
+@bp.post("/stream/<token>/convert-hls")
+def stream_convert_hls(token: str):
+    """Trigger HLS transcoding for a direct session (called when browser can't play)."""
+    ok = web_player.start_hls_conversion(token)
+    if not ok:
+        abort(404)
+    return jsonify(ok=True)
+
+
+@bp.get("/stream/<token>/hls-status")
+def stream_hls_status(token: str):
+    """Poll whether HLS conversion is done."""
+    s = web_player.get_direct_session(token)
+    if not s:
+        abort(404)
+    tmp_dir  = web_player.PLAYER_TMP_DIR / token
+    err_file = tmp_dir / "hls_error.txt"
+    rdy_file = tmp_dir / "hls_ready.txt"
+    if err_file.exists():
+        return jsonify(status="error", error=err_file.read_text().strip())
+    if rdy_file.exists():
+        playlist = rdy_file.read_text().strip()
+        return jsonify(status="ready", url=f"/stream/{token}/hls/{playlist}")
+    return jsonify(status="converting")
 
 
 @bp.get("/stream/<token>/subtitles")
