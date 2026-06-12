@@ -2,6 +2,52 @@
 
 All notable changes to Mycelium are documented in this file.
 
+## [0.5.2] - 2026-06-12
+
+### Added
+
+- **Web Player VA-API**: hardware-accelerated HEVC transcoding via VA-API (`renderD128`); reduces CPU usage significantly on supported hardware
+- **Web Player HEVC-always**: HEVC is always transcoded to HLS regardless of codec; direct serve only for H264 to avoid browser incompatibility
+- Docker Compose: `videodriver` GID 937 added for VA-API `renderD128` access
+- **Spore wrapper EAE detection**: also detects EAE need from output encoder args (e.g. Shield TV requesting `eac3_eae` output via eARC); skips injecting native decoder hint when output is `copy` to prevent EAE init failures on HTTP input
+
+### Fixed
+
+**Web Player**
+- Black screen / corrupt green output on 10-bit HEVC with VA-API (Apollo Lake J3455)
+- `scale_vaapi` failure on 10-bit HEVC sources
+- Stale segments causing black screen after seek or restart
+- Missing `/direct`, `/convert-hls`, `/hls-status` routes
+- HLS buffer increased to prevent stalls on slow CDN
+- Temp directory leak when HLS conversion crashes before session registration
+- `ffmpeg.log` file handle not closed on `Popen` failure
+- `shutil.rmtree` called before ffmpeg process exits (race condition)
+
+**Security**
+- Session fixation: `session.clear()` now called before writing new session keys on login
+- `/torbox-webhook` and `/ui/api/repair-strms` now require authentication
+- `/setup/save` now validates against a known-key allowlist (previously accepted arbitrary keys)
+- `/health` no longer leaks internal exception details in the response body
+
+**Data integrity**
+- `cleanup.py`: new strm written via `process_torrent` before the old one is deleted
+- `upgrader.py`: season-pack strms written before per-episode strms are removed
+- `mp4_faststart.py`: `.fsh` cache written atomically via temp-file + rename; ftyp box fetched at actual size instead of hardcoded 64 bytes
+
+**Logic**
+- `torbox.py`: `metaDL_done` state never matched because `download_state` is lowercased before comparison — fixed to `metadl_done`
+- `torbox.py`: createtorrent quota now recorded after HTTP success, not before (prevented quota inflation on network errors)
+- `torrentio.py`: season-pack regex `s0?N` → `s0*N(?!\d)` to correctly match zero-padded season codes
+- `catbox.py`: `release_idle()` no longer aborts on first network error — each torrent deletion is now wrapped in try/except
+- `monitor.py`: aired episodes without a strm are now marked `wanted` in the DB (were silently left without status)
+- `retry_queue.py`: startup crash on undefined `_CREATETORRENT_LIMIT` constant (should be `_CREATETORRENT_LIMIT_HOUR`)
+- `db.py`: `_migrate()` ALTER TABLE loop now catches per-column errors instead of aborting remaining migrations
+
+**Fresh install**
+- Fixed crash `sqlite3.OperationalError: no such table: settings` on first boot when the DB is empty ([#34](https://github.com/corveck79/mycelium/issues/34))
+
+---
+
 ## [0.5.1-dev] - 2026-05-29
 
 ### Added

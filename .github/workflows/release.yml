@@ -49,15 +49,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Extract release notes
+        run: |
+          python3 << 'PYEOF'
+          import re, os
+          version = os.environ['VERSION']
+          repo = os.environ['REPO']
+          with open('CHANGELOG.md') as f:
+              content = f.read()
+          pattern = rf'## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+          m = re.search(pattern, content, re.DOTALL)
+          notes = m.group(1).strip() if m else f'_See [CHANGELOG.md](https://github.com/{repo}/blob/main/CHANGELOG.md) for full details._'
+          body = (
+              f'## Install\n\n'
+              f'```bash\n'
+              f'docker pull ghcr.io/{repo}:{version}\n'
+              f'```\n\n'
+              f'---\n\n'
+              f'{notes}\n'
+          )
+          with open('release_notes.md', 'w') as f:
+              f.write(body)
+          PYEOF
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ github.repository }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          body: |
-            Docker image: `ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}`
-
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
-            ```
-
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          generate_release_notes: false
+          body_path: release_notes.md

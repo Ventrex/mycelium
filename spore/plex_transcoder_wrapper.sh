@@ -119,7 +119,24 @@ if [ "$spore_replaced" = "1" ]; then
     # polling is futile. We still attempt a quick lookup via the PMS process
     # environment in case EAE was already initialised by a prior local session.
     # Only relevant for codecs that route through EAE (eac3, truehd).
-    case "$cdn_audio_codec" in eac3|truehd|eac3_eae|truehd_eae)
+    # Determine if EAE is needed: cdn_audio_codec requires EAE input decoding,
+    # OR the post-input args contain eac3_eae/truehd_eae as output encoder
+    # (e.g. Shield TV requests EAC3 output for AV receiver via eARC).
+    _needs_eae=0
+    case "$cdn_audio_codec" in eac3|truehd|eac3_eae|truehd_eae) _needs_eae=1 ;; esac
+    if [ "$_needs_eae" = "0" ]; then
+        _after_i=0
+        for _a in "${newargs[@]}"; do
+            [ "$_a" = "-i" ] && _after_i=1 && continue
+            if [ "$_after_i" = "1" ] && [[ "$_a" =~ ^(eac3|truehd)_eae$ ]]; then
+                _needs_eae=1
+                echo "$(date '+%H:%M:%S') WRAP EAE detected in output encoder: $_a" >> "$SPORE_LOG"
+                break
+            fi
+        done
+    fi
+
+    if [ "$_needs_eae" = "1" ]; then
         if [ -z "$EAE_ROOT" ]; then
             for _pid in $(pgrep -f "Plex Media Server" 2>/dev/null | head -5); do
                 [ -r "/proc/$_pid/environ" ] || continue
@@ -133,12 +150,26 @@ if [ "$spore_replaced" = "1" ]; then
             done
         fi
         if [ -z "$EAE_ROOT" ]; then
-            echo "$(date '+%H:%M:%S') WRAP WARNING: EAE_ROOT not set for $cdn_audio_codec -- EAE will likely fail" >> "$SPORE_LOG"
+            echo "$(date '+%H:%M:%S') WRAP WARNING: EAE_ROOT not set -- EAE will likely fail" >> "$SPORE_LOG"
         fi
-        ;;
-    esac
+    fi
 
     if [ -n "$cdn_audio_codec" ]; then
+        # Helper: returns 0 if stream N has output codec=copy (post-input).
+        # When output is copy FFmpeg never decodes the stream, so no decoder hint
+        # is needed -- and injecting one can cause EAE to initialise and fail.
+        _output_is_copy() {
+            local n=$1 after_i=0 idx nidx
+            for idx in "${!newargs[@]}"; do
+                [ "${newargs[$idx]}" = "-i" ] && after_i=1 && continue
+                if [ "$after_i" = "1" ] && [ "${newargs[$idx]}" = "-codec:${n}" ]; then
+                    nidx=$((idx + 1))
+                    [ "${newargs[$nidx]:-}" = "copy" ] && return 0
+                fi
+            done
+            return 1
+        }
+
         i_pos_n=-1
         for idx in "${!newargs[@]}"; do
             if [ "${newargs[$idx]}" = "-i" ]; then i_pos_n=$idx; break; fi
@@ -153,6 +184,13 @@ if [ "$spore_replaced" = "1" ]; then
             fi
             native_hints=()
             for ei in "${inject_indices[@]}"; do
+                if _output_is_copy "$ei"; then
+                    # Output is copy: no decode happens, no decoder hint needed.
+                    # Injecting one would trigger EAE init which fails on HTTP input.
+                    echo "$(date '+%H:%M:%S') WRAP skip decoder hint :${ei} (output=copy)" >> "$SPORE_LOG"
+                    echo "SPORE-WRAP: skip decoder hint -codec:${ei} (output=copy, EAE not needed)" >&2
+                    continue
+                fi
                 native_hints+=("-codec:${ei}" "$cdn_audio_codec")
                 echo "$(date '+%H:%M:%S') WRAP inject native decoder: -codec:${ei} ${cdn_audio_codec}" >> "$SPORE_LOG"
                 echo "SPORE-WRAP: injected native decoder: -codec:${ei} ${cdn_audio_codec}" >&2

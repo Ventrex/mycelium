@@ -1,5 +1,29 @@
 [
   {
+    "version": "0.5.2",
+    "date": "2026-06-12",
+    "notes": [
+      "Web Player: VA-API hardware acceleration for HEVC (10-bit, no-scaling mode)",
+      "Web Player: always transcode HEVC to HLS; direct serve only for H264",
+      "Web Player: fixed black screen / corrupt output on Apollo Lake (J3455) with VA-API",
+      "Web Player: fixed stale-segment black screen, missing routes, temp-dir and handle leaks",
+      "Docker: GID 937 for VA-API renderD128 access",
+      "Spore wrapper: EAE detection from output encoder (Shield TV eARC); skip decoder hint when output=copy",
+      "Fix: fresh install crash 'no such table: settings' when DB is empty (issue #34)",
+      "Security: session fixation fix - session cleared before login",
+      "Security: /torbox-webhook and /ui/api/repair-strms now require authentication",
+      "Security: /setup/save rejects unknown setting keys; /health no longer leaks exception detail",
+      "Fix: TorBox metaDL_done state never matched (lowercase mismatch)",
+      "Fix: createtorrent quota recorded before HTTP success",
+      "Fix: season-pack regex missed zero-padded season codes",
+      "Fix: release_idle() aborted on first network error - now per-item try/except",
+      "Fix: aired episodes without strm stuck without 'wanted' status in monitor.py",
+      "Fix: retry_queue startup crash on undefined constant",
+      "Fix: mp4_faststart ftyp read too small; cache write now atomic",
+      "Fix: cleanup and upgrader now write replacement strm before deleting old one"
+    ]
+  },
+  {
     "version": "0.5.1-dev",
     "date": "2026-05-29",
     "notes": [
