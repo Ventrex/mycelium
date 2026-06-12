@@ -446,6 +446,7 @@ if [ "$spore_replaced" = "1" ]; then
 fi
 
 if [ "$spore_replaced" = "1" ]; then
+    echo "=== $(date '+%H:%M:%S') SPORE session ===" >> /config/spore-ffmpeg-stderr.log
     exec '/usr/lib/plexmediaserver/Plex Transcoder.real' "${newargs[@]}" \
         2>>/config/spore-ffmpeg-stderr.log
 fi
