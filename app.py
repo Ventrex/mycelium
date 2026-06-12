@@ -291,6 +291,26 @@ def _start_scheduler() -> BackgroundScheduler:
         )
         log.info("Scheduled retry queue every %dm", RETRY_QUEUE_INTERVAL_MINUTES)
 
+    # Probe CDN files for Plex stubs that have no track info yet (duration, audio, subs).
+    # Runs every 30 min in a background thread to avoid blocking the scheduler.
+    # build_fsh=False: only ffprobe, no 32MB download per file.
+    if cfg.SPORE_ENABLED:
+        def _run_probe_pending():
+            import threading as _t
+            _t.Thread(
+                target=strm_generator.probe_pending_stubs,
+                daemon=True,
+                name="probe-pending-stubs",
+            ).start()
+
+        scheduler.add_job(
+            _run_probe_pending,
+            trigger="interval", minutes=30,
+            id="probe_pending_stubs",
+            next_run_time=None,
+        )
+        log.info("Scheduled probe_pending_stubs every 30m")
+
     if not LITE_MODE:
         if AUTO_UPGRADE_ENABLED and AUTO_UPGRADE_INTERVAL_HOURS > 0:
             scheduler.add_job(

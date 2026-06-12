@@ -75,6 +75,16 @@ def _pick_main_movie_file(files: list[dict]) -> dict | None:
     return max(big or non_trailer, key=lambda f: f.get('size') or 0)
 
 
+def _pick_episode_file(files: list[dict], season: int, episode: int) -> dict | None:
+    """Find the file in a season pack matching SxxExx. Falls back to None if no match."""
+    ep_re = re.compile(rf'[Ss]0?{season}[Ee]0?{episode}\b', re.IGNORECASE)
+    videos = [f for f in files if _is_video(f.get('name') or '')]
+    matched = [f for f in videos if ep_re.search(f.get('name') or '')]
+    if matched:
+        return max(matched, key=lambda f: f.get('size') or 0)
+    return None
+
+
 def _clean_torrent_name(name: str) -> str:
     """Strip site prefixes and Cyrillic blocks from a raw torrent name."""
     s = _SITE_PREFIX_RE.sub('', name).strip()
@@ -345,12 +355,18 @@ _PRELOAD_MIN_INTERVAL = 7.0                   # seconds between add_magnet calls
 # TorBox CDN URL ophalen en opslaan. Gedeeld door Jellyfin en Spore.
 
 def _cache_cdn_url(info_hash: str, ready_item: dict, title: str) -> None:
-    """Fetch CDN URL for a ready TorBox item and store in catbox URL cache.
-    Uses _pick_main_movie_file to select the correct file."""
+    """Fetch CDN URLs for ALL tokens with this hash and update catbox URL cache + Spore stubs.
+
+    Movies: one token, picks largest video file.
+    Season packs: N episode tokens sharing the same hash, each gets its own file via SxxExx match.
+    """
     try:
+        import catbox as _catbox
         torrent_id = ready_item.get("id")
         files = ready_item.get("files") or []
-        if not files or not torrent_id:
+        if not torrent_id:
+            return
+        if not files:
             # TorBox sometimes omits the files list; force a fresh lookup
             fresh = torbox_mod.find_by_hash(info_hash, force_refresh=True)
             if fresh:
@@ -359,18 +375,38 @@ def _cache_cdn_url(info_hash: str, ready_item: dict, title: str) -> None:
         if not files or not torrent_id:
             log.debug("Preload: no files for %s, CDN cache skipped", title)
             return
-        main = _pick_main_movie_file(files)
-        file_id = (main or files[0]).get("id")
-        cdn_url = _get_stream_url(torrent_id, file_id)
-        if not cdn_url:
+
+        all_items = db.get_virtual_items_by_hash(info_hash)
+        if not all_items:
             return
-        vi = db.get_virtual_item_by_hash(info_hash)
-        token = vi["token"] if vi else None
-        if token:
-            import catbox as _catbox
+
+        cached_count = 0
+        for vi in all_items:
+            token   = vi.get("token")
+            season  = vi.get("season")
+            episode = vi.get("episode")
+            if not token:
+                continue
+            if season and episode:
+                # Episode in a season pack: find the specific file by SxxExx
+                f = _pick_episode_file(files, season, episode)
+                if not f:
+                    log.debug("Preload: no file match S%02dE%02d for %s", season, episode, title)
+                    continue
+                file_id = f.get("id")
+            else:
+                # Movie (or single-file torrent): pick the main video file
+                main = _pick_main_movie_file(files)
+                file_id = (main or files[0]).get("id")
+
+            cdn_url = _get_stream_url(torrent_id, file_id)
+            if not cdn_url:
+                continue
             _catbox.cache_url(token, cdn_url)
-            log.info("Preload: %s CDN URL cached", title)
             _preload_spore(cdn_url, token)
+            cached_count += 1
+
+        log.info("Preload: %s CDN URLs cached (%d/%d tokens)", title, cached_count, len(all_items))
     except Exception as exc:
         log.debug("Preload: CDN cache skipped for %s: %s", title, exc)
 
@@ -429,25 +465,30 @@ def update_minfo_preferred_audio(token: str, audio_index: int) -> None:
         log.warning("Spore: could not update .minfo for token=%s: %s", token, exc)
 
 
-def _preload_spore(cdn_url: str, token: str) -> None:
-    """Build fast-start cache and probe tracks for a newly preloaded torrent.
-    Runs in the preload thread so first Plex play is instant."""
+def _preload_spore(cdn_url: str, token: str, build_fsh: bool = True) -> None:
+    """Probe CDN tracks and optionally build fast-start cache for a Plex stub.
+
+    build_fsh=True  -- full preload path: build .fsh cache + ffprobe (used on first play / preload)
+    build_fsh=False -- lightweight probe only: ffprobe without downloading 32MB (used for bulk backfill)
+    """
     if not settings.get("SPORE_ENABLED", cfg.SPORE_ENABLED):
         return
     try:
-        import mp4_faststart, json as _json, subprocess as _sp
+        import json as _json, subprocess as _sp
         # Skip probe if already done (preferred_audio detection included)
         existing = db.load_spore_tracks(token)
         if existing and "preferred_audio_idx" in existing:
             return
 
-        ok = mp4_faststart.build_and_cache(cdn_url, token)
-        if not ok:
-            return
-
-        # Extract CodecPrivate from the cached .fsh moov (no -show_data needed)
-        cp = mp4_faststart.extract_codec_private(token)
-        v_extra_hex = cp.hex() if cp else ""
+        v_extra_hex = ""
+        if build_fsh:
+            import mp4_faststart
+            ok = mp4_faststart.build_and_cache(cdn_url, token)
+            if not ok:
+                return
+            # Extract CodecPrivate from the cached .fsh moov (no -show_data needed)
+            cp = mp4_faststart.extract_codec_private(token)
+            v_extra_hex = cp.hex() if cp else ""
 
         res = _sp.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
@@ -472,8 +513,8 @@ def _preload_spore(cdn_url: str, token: str) -> None:
             update_minfo_preferred_audio(token, preferred_idx)
             log.info("Preload: preferred_audio=%d for token=%s (TrueHD -> fallback)",
                      preferred_idx, token)
-        log.info("Preload: spore probe done token=%s dur=%.0fs subs=%d extradata=%d",
-                 token, dur, len(subs), len(cp or b''))
+        log.info("Preload: spore probe done token=%s dur=%.0fs subs=%d fsh=%s",
+                 token, dur, len(subs), build_fsh)
     except Exception as exc:
         log.debug("Preload: spore probe failed token=%s: %s", token, exc)
 
@@ -648,7 +689,7 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
                 nfo_generator.fetch_images_for_folder(series_root, imdb_id, "tv")
             except Exception as exc:
                 log.debug("Image fetch skipped for %s: %s", safe_title, exc)
-        if preload_first and settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
+        if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,
                 args=(info_hash, magnet, ep_name),
@@ -1107,6 +1148,98 @@ def regenerate_spore_stubs(token: str | None = None) -> dict:
     log.info("Spore regenerate: total=%d regenerated=%d skipped=%d errors=%d",
              total, regenerated, skipped, errors)
     return {"total": total, "regenerated": regenerated, "skipped": skipped, "errors": errors}
+
+
+def probe_pending_stubs() -> dict:
+    """Background job: probe CDN files for Plex stubs that have no track info yet.
+
+    Finds virtual_items with strm_path but no spore_tracks, checks TorBox library,
+    and probes those already in TorBox (no add_magnet, no waiting).
+    Uses build_fsh=False so no 32MB download per file -- just ffprobe for metadata.
+    Fast-start cache is built on first actual Plex play.
+
+    Returns counts: probed / skipped / not_in_torbox / errors.
+    """
+    if not settings.get("SPORE_ENABLED", cfg.SPORE_ENABLED):
+        return {"skipped": "SPORE_ENABLED=false"}
+
+    import catbox as _catbox
+
+    items = db.get_unprobed_spore_items()
+    if not items:
+        log.debug("Probe pending: nothing to do")
+        return {"probed": 0, "skipped": 0, "not_in_torbox": 0, "errors": 0}
+
+    log.info("Probe pending: %d stubs without track info", len(items))
+
+    # Group by info_hash to avoid duplicate TorBox API lookups
+    by_hash: dict[str, list[dict]] = {}
+    for item in items:
+        h = (item.get("info_hash") or "").lower()
+        if h:
+            by_hash.setdefault(h, []).append(item)
+
+    probed = skipped = not_in_torbox = errors = 0
+
+    for info_hash, hash_items in by_hash.items():
+        try:
+            ready = torbox_mod.find_by_hash(info_hash)
+            if not ready or not torbox_mod._is_ready(ready):
+                not_in_torbox += len(hash_items)
+                continue
+
+            torrent_id = ready.get("id")
+            files = ready.get("files") or []
+            if not files or not torrent_id:
+                fresh = torbox_mod.find_by_hash(info_hash, force_refresh=True)
+                if fresh:
+                    files = fresh.get("files") or []
+                    torrent_id = fresh.get("id") or torrent_id
+            if not files or not torrent_id:
+                skipped += len(hash_items)
+                continue
+
+            for vi in hash_items:
+                token   = vi.get("token")
+                season  = vi.get("season")
+                episode = vi.get("episode")
+                if not token:
+                    skipped += 1
+                    continue
+                # Skip if probed in the meantime (race with preload thread)
+                if db.load_spore_tracks(token):
+                    skipped += 1
+                    continue
+
+                if season and episode:
+                    f = _pick_episode_file(files, season, episode)
+                    if not f:
+                        log.debug("Probe pending: no file for S%02dE%02d token=%s", season, episode, token)
+                        skipped += 1
+                        continue
+                    file_id = f.get("id")
+                else:
+                    main = _pick_main_movie_file(files)
+                    file_id = (main or files[0]).get("id")
+
+                cdn_url = _get_stream_url(torrent_id, file_id)
+                if not cdn_url:
+                    skipped += 1
+                    continue
+
+                _catbox.cache_url(token, cdn_url)
+                # build_fsh=False: skip 32MB download, just ffprobe for metadata
+                _preload_spore(cdn_url, token, build_fsh=False)
+                probed += 1
+                time.sleep(0.3)  # small delay to avoid hammering TorBox requestdl
+
+        except Exception as exc:
+            log.warning("Probe pending: error for hash %s: %s", info_hash, exc)
+            errors += len(hash_items)
+
+    log.info("Probe pending done: probed=%d skipped=%d not_in_torbox=%d errors=%d",
+             probed, skipped, not_in_torbox, errors)
+    return {"probed": probed, "skipped": skipped, "not_in_torbox": not_in_torbox, "errors": errors}
 
 
 def update_stub_from_probe(token: str, audio_streams: list[dict],
