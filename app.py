@@ -399,7 +399,7 @@ if cfg.SPORE_ENABLED:
         log.warning("Mycelium Spore server failed to start: %s", _spore_exc)
 
 # Fast-start cache in dedicated subdir so media root stays clean
-_fsh_cache_dir = os.path.join(cfg.SPORE_MEDIA_PATH, ".fsh")
+_fsh_cache_dir = cfg.SPORE_MEDIA_PATH + "/.fsh"
 try:
     import mp4_faststart
     mp4_faststart.init(_fsh_cache_dir)
