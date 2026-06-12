@@ -153,22 +153,22 @@ class TestMakeStubMkv:
         # EBML magic: 0x1A 0x45 0xDF 0xA3
         assert data[:4] == b'\x1a\x45\xdf\xa3'
 
-    def test_hevc_codec_for_4k(self):
-        data = sg.make_stub_mkv("Test 4K", quality="2160p")
-        assert b"V_MPEGH/ISO/HEVC" in data
+    def test_vp8_video_codec_always(self):
+        # VP8 stub forces video transcoding on all Plex clients (no Direct Play
+        # profile for VP8). This ensures the transcoder wrapper is always called.
+        for q in ("720p", "1080p", "2160p"):
+            data = sg.make_stub_mkv("Test", quality=q)
+            assert b"V_VP8" in data, f"V_VP8 verwacht voor quality={q}"
+            assert b"V_MPEGH/ISO/HEVC" not in data, "HEVC mag niet in default stub"
+            assert b"V_MPEG4/ISO/AVC" not in data, "H264 mag niet in default stub"
 
-    def test_h264_codec_for_1080p(self):
-        data = sg.make_stub_mkv("Test HD", quality="1080p")
-        assert b"V_MPEG4/ISO/AVC" in data
-
-    def test_h264_codec_for_720p(self):
-        data = sg.make_stub_mkv("Test 720", quality="720p")
-        assert b"V_MPEG4/ISO/AVC" in data
-
-    def test_audio_track_present(self):
+    def test_eac3_audio_placeholder(self):
         data = sg.make_stub_mkv("Test", quality="1080p")
-        # PCM 16ch placeholder -- prevents Direct Play (HDMI max 8ch PCM)
-        assert b"A_PCM/INT/LIT" in data
+        # EAC3 6ch placeholder: Plex kiest Direct Stream audio (copy output) voor
+        # clients die EAC3 passthrough ondersteunen. Geen EAE nodig, geen codec
+        # mismatch: Plex onderhandelt EAC3 output zelf -> accepteert EAC3 copy.
+        assert b"A_EAC3" in data
+        assert b"A_PCM/INT/LIT" not in data
 
 
 class TestWriteSporeStubs:
