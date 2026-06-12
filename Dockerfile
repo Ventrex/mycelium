@@ -24,7 +24,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG TARGETARCH
 # Add non-free repo for Intel VA-API driver (iHD = Gen8+, includes J3455/J4125)
+# intel-media-va-driver is x86-only; skip on arm64
 RUN echo "deb http://deb.debian.org/debian bookworm contrib non-free non-free-firmware" \
         > /etc/apt/sources.list.d/non-free.list \
     && apt-get update \
@@ -32,7 +34,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm contrib non-free non-free-fi
         ffmpeg \
         libva2 \
         libva-drm2 \
-        intel-media-va-driver \
+    && if [ "$TARGETARCH" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
