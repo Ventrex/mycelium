@@ -329,6 +329,17 @@ if [ "$spore_replaced" = "1" ]; then
     last="${newargs[-1]}"
     unset 'newargs[-1]'
     newargs+=("-max_interleave_delta" "0" "-max_muxing_queue_size" "4096" "$last")
+    # ── Override loglevel for stderr capture ──────────────────────────────────
+    # Plex passes -loglevel quiet which suppresses all FFmpeg output including
+    # errors. Temporarily override to 'error' so failures are visible in the
+    # spore-ffmpeg-stderr.log. Remove once root cause is found.
+    for idx in "${!newargs[@]}"; do
+        if [ "${newargs[$idx]}" = "-loglevel" ] && [ "${newargs[$((idx+1))]:-}" = "quiet" ]; then
+            newargs[$((idx+1))]="error"
+            echo "$(date '+%H:%M:%S') WRAP override -loglevel quiet->error (debug)" >> "$SPORE_LOG"
+        fi
+    done
+
     echo "SPORE-WRAP: injected muxer error-tolerance flags" >&2
     echo "SPORE-WRAP: full command: ${newargs[*]}" >&2
     echo "$(date '+%H:%M:%S') WRAP final cmd: ${newargs[*]}" >> "$SPORE_LOG"
