@@ -59,16 +59,23 @@ if [ "$spore_replaced" = "1" ]; then
     #           EAC3 must be decoded and re-encoded. Keep eac3_eae hint AND
     #           -eae_prefix so EAE can find its watchfolder and decode properly.
     #           Never force-copy here: codec mismatch kills the Plex session.
+    #
+    # _audio_stream_idx: the stream index Plex selected for audio output.
+    # With multi-track stubs (real languages) the user may pick track 2 (NLD),
+    # 3 (ITA), etc. -- not always index 1. Detect the first post-input -codec:N
+    # where N >= 1; that is the selected audio stream index.
     _audio_output_is_copy=0
+    _audio_stream_idx=1
     _past_i_aod=0
     for _idx in "${!newargs[@]}"; do
         [ "${newargs[$_idx]}" = "-i" ] && _past_i_aod=1 && continue
-        if [ "$_past_i_aod" = "1" ] && [ "${newargs[$_idx]}" = "-codec:1" ]; then
+        if [ "$_past_i_aod" = "1" ] && [[ "${newargs[$_idx]}" =~ ^-codec:([1-9][0-9]*)$ ]]; then
+            _audio_stream_idx="${BASH_REMATCH[1]}"
             [ "${newargs[$((_idx+1))]:-}" = "copy" ] && _audio_output_is_copy=1
             break
         fi
     done
-    echo "$(date '+%H:%M:%S') WRAP audio_output_is_copy=${_audio_output_is_copy}" >> "$SPORE_LOG"
+    echo "$(date '+%H:%M:%S') WRAP audio_output_is_copy=${_audio_output_is_copy} audio_stream_idx=${_audio_stream_idx}" >> "$SPORE_LOG"
 
     # ── Remove pre-input EAE decoder hints ────────────────────────────────────
     # Plex injects decoder hints before -i based on the stub audio codec:
@@ -374,14 +381,14 @@ if [ "$spore_replaced" = "1" ]; then
         _ai3=0
         for idx in "${!newargs[@]}"; do
             [ "${newargs[$idx]}" = "-i" ] && _ai3=1 && continue
-            if [ "$_ai3" = "1" ] && [ "${newargs[$idx]}" = "-codec:1" ]; then
+            if [ "$_ai3" = "1" ] && [ "${newargs[$idx]}" = "-codec:${_audio_stream_idx}" ]; then
                 _acodec_post="${newargs[$((idx+1))]:-}"
                 break
             fi
         done
 
         if [ -n "$_acodec_post" ] && [ "$_acodec_post" != "copy" ]; then
-            echo "$(date '+%H:%M:%S') WRAP force audio copy (was: $_acodec_post, EAE unavailable)" >> "$SPORE_LOG"
+            echo "$(date '+%H:%M:%S') WRAP force audio copy (was: $_acodec_post, stream:${_audio_stream_idx}, EAE unavailable)" >> "$SPORE_LOG"
             _ahl2=""
             _fa2=()
             _sk3=0
@@ -393,7 +400,7 @@ if [ "$spore_replaced" = "1" ]; then
                 [ "$_a" = "-i" ] && _past_i3=1
                 case "$_a" in
                     -filter_complex)
-                        if [[ "$_n" == \[0:1\]* ]]; then
+                        if [[ "$_n" == \[0:${_audio_stream_idx}\]* ]]; then
                             _ahl2=$(echo "$_n" | grep -oE '\[[0-9]+\]' | tail -1)
                             _sk3=1
                             echo "$(date '+%H:%M:%S') WRAP removed audio filter_complex (label=${_ahl2})" >> "$SPORE_LOG"
@@ -401,16 +408,21 @@ if [ "$spore_replaced" = "1" ]; then
                         fi ;;
                     -map)
                         if [ -n "$_ahl2" ] && [ "$_n" = "$_ahl2" ]; then
-                            _fa2+=("-map" "0:1"); _sk3=1
-                            echo "$(date '+%H:%M:%S') WRAP replaced audio -map ${_ahl2} -> 0:1" >> "$SPORE_LOG"
+                            _fa2+=("-map" "0:${_audio_stream_idx}"); _sk3=1
+                            echo "$(date '+%H:%M:%S') WRAP replaced audio -map ${_ahl2} -> 0:${_audio_stream_idx}" >> "$SPORE_LOG"
                             continue
                         fi ;;
-                    -codec:1)
-                        if [ "$_past_i3" = "1" ] && [ "$_n" != "copy" ]; then
-                            _fa2+=("-codec:1" "copy"); _sk3=1; continue
+                    *)
+                        if [ "$_past_i3" = "1" ]; then
+                            if [ "$_a" = "-codec:${_audio_stream_idx}" ] && [ "$_n" != "copy" ]; then
+                                _fa2+=("-codec:${_audio_stream_idx}" "copy"); _sk3=1; continue
+                            fi
+                            if [ "$_a" = "-b:${_audio_stream_idx}" ] || \
+                               [ "$_a" = "-maxrate:${_audio_stream_idx}" ] || \
+                               [ "$_a" = "-bufsize:${_audio_stream_idx}" ]; then
+                                _sk3=1; continue
+                            fi
                         fi ;;
-                    -b:1|-maxrate:1|-bufsize:1)
-                        [ "$_past_i3" = "1" ] && { _sk3=1; continue; } ;;
                 esac
                 _fa2+=("$_a")
             done

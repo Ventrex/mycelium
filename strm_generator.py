@@ -1263,9 +1263,20 @@ def update_stub_from_probe(token: str, audio_streams: list[dict],
     if not mkv_path.parent.exists():
         return False
 
-    # Keep audio_tracks=None so make_stub_mkv uses the A_EAC3 6ch placeholder.
-    # video_codec_private (avcC/hvcC SPS/PPS) is not passed: the probe-derived
-    # codec_private would be passed via update_stub_from_probe once available.
+    # Write real audio tracks so Plex shows the correct languages and the user
+    # can switch between e.g. Dutch / English / Italian in the Plex UI.
+    # Stream order matches the CDN file order, so Plex's -map 0:N references
+    # are correctly forwarded to the CDN file by the transcoder wrapper.
+    audio_tracks = [
+        {
+            "codec":       (s.get("codec_name") or "eac3").lower(),
+            "language":    (s.get("tags") or {}).get("language", "und")[:3],
+            "channels":    s.get("channels") or 2,
+            "sample_rate": int(s.get("sample_rate") or 48000),
+        }
+        for s in audio_streams
+    ] or None
+
     subtitle_tracks = [
         {
             "codec":    s.get("codec_name", "subrip"),
@@ -1295,7 +1306,7 @@ def update_stub_from_probe(token: str, audio_streams: list[dict],
             item.get("title") or strm_path.stem,
             item.get("quality"),
             duration_sec=duration_s or 7200.0,
-            audio_tracks=None,
+            audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks or None,
             # video_codec_private omitted: updated via update_stub_from_probe
         )
