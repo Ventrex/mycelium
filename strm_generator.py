@@ -872,12 +872,15 @@ def make_stub_mkv(title: str, quality: str | None = None,
             )
             next_num += 1
     else:
-        # PCM 16ch placeholder: 16-channel PCM cannot be Direct Played on any
-        # device (HDMI/eARC max is 8ch), so Plex always invokes the external
-        # transcoder regardless of client profile. The wrapper then forces
-        # video copy mode (see plex_transcoder_wrapper.sh force-video-copy).
+        # EAC3 16ch placeholder: 16-channel EAC3 cannot be Direct Played on
+        # any device (HDMI/eARC max is 8ch), so Plex always invokes the
+        # external transcoder. Crucially, Plex starts EasyAudioEncoder (EAE)
+        # *before* spawning the transcoder when the stub declares EAC3 -- so
+        # EAE_ROOT is set in the transcoder environment. The wrapper can then
+        # let Plex's eac3_eae decoder work (EAE is running), and the real
+        # CDN EAC3 is decoded correctly via eac3_eae -> Opus transcoding.
         tracks_data += _ebml_audio_track_entry(
-            track_num=2, codec_mkv="A_PCM/INT/LIT", lang="und",
+            track_num=2, codec_mkv="A_EAC3", lang="und",
             channels=16, sample_rate=48000.0, is_default=True,
         )
         next_num = 3
@@ -1120,16 +1123,17 @@ def update_stub_from_probe(token: str, audio_streams: list[dict],
     # Include real CodecPrivate (avcC/hvcC) from the fast-start cache.
     # This lets Plex know the exact video profile/level and choose video-copy
     # instead of re-encoding (saves significant CPU per session).
-    # Direct Play is NOT possible because the stub uses a PCM 16ch audio
-    # placeholder that no device can pass through HDMI -- the transcoder is
-    # always invoked, so the wrapper always runs.
+    # Direct Play is NOT possible because the stub uses an EAC3 16ch audio
+    # placeholder that no device can pass through HDMI (max 8ch) -- the
+    # transcoder is always invoked, so the wrapper always runs. EAC3 stub
+    # also triggers Plex to start EAE before the transcoder, so EAE_ROOT is
+    # set and eac3_eae can decode the real CDN EAC3 content.
     import mp4_faststart as _mp4fs
     v_cp = _mp4fs.extract_codec_private(token)
 
-    # Keep audio_tracks=None so make_stub_mkv uses the PCM 16ch placeholder.
-    # PCM 16ch forces Plex to invoke the external transcoder (our wrapper
-    # rewrites -i stub.mkv -> spore-stream URL). Real audio tracks would allow
-    # Direct Play on Shield/Android, bypassing the wrapper entirely.
+    # Keep audio_tracks=None so make_stub_mkv uses the EAC3 16ch placeholder.
+    # Real audio tracks would allow Direct Play on Shield/Android, bypassing
+    # the wrapper entirely.
     subtitle_tracks = [
         {
             "codec":    s.get("codec_name", "subrip"),
