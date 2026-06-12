@@ -165,16 +165,12 @@ if [ "$spore_replaced" = "1" ]; then
                 fi
             done
         fi
-        if [ -z "$EAE_ROOT" ]; then
-            # Methode 2: zoek EasyAudioEncoder watchfolder direct op schijf
-            # Plex maakt /run/plex-temp/pms-<uuid>/EasyAudioEncoder aan bij opstarten.
-            _found=$(find /run/plex-temp /tmp -maxdepth 4 -type d \
-                         -name "EasyAudioEncoder" 2>/dev/null | head -1)
-            if [ -n "$_found" ]; then
-                export EAE_ROOT="$_found"
-                echo "$(date '+%H:%M:%S') WRAP EAE_ROOT from find: $EAE_ROOT" >> "$SPORE_LOG"
-            fi
-        fi
+        # Methode 2 (find) verwijderd: vond altijd stale watchfolder-dirs van
+        # eerdere sessies. Plex herstart creëert dezelfde UUID-map in /run/,
+        # maar de EAE daemon draait dan niet meer op dat pad. Een stale
+        # EAE_ROOT is erger dan geen: force-audio-copy wordt dan niet
+        # getriggerd, eac3_eae schrijft naar de dode watchfolder en hangt
+        # tot Plex de sessie na ~5 sec beëindigt.
         if [ -z "$EAE_ROOT" ]; then
             echo "$(date '+%H:%M:%S') WRAP WARNING: EAE_ROOT not set -- EAE will likely fail" >> "$SPORE_LOG"
         fi
@@ -323,13 +319,23 @@ if [ "$spore_replaced" = "1" ]; then
         echo "SPORE-WRAP: remapped filter_complex [0:${stub_audio_idx}] -> [0:${cdn_preferred_idx}]" >&2
     fi
 
-    # ── Force audio copy when EAE unavailable ─────────────────────────────────
-    # eac3_eae / truehd_eae require an EAE_ROOT watchfolder that Plex creates
-    # only for local-file sessions. With HTTP input (-i http://...) EAE never
-    # initialises, causing "No EAE watchfolder set!" and decode failure.
-    # Fix: copy the audio stream as-is (EAC3 passthrough). Shield TV + eARC
-    # AV receiver receives the original EAC3 5.1 stream directly.
-    if [ "$_needs_eae" = "1" ] && [ -z "$EAE_ROOT" ]; then
+    # ── Force audio copy for EAC3 CDN (always) / fallback for other EAE codecs ─
+    # For EAC3: always force -codec:1 copy regardless of EAE_ROOT state.
+    #   - EAE is unreliable over HTTP input (watchfolder IPC designed for
+    #     local files). Even when EAE_ROOT is found it may be stale, causing
+    #     eac3_eae to hang ~5 sec before Plex kills the session.
+    #   - EAC3 copy passthrough is actually better: Shield TV + eARC AV
+    #     receiver receives the native EAC3 5.1 bitstream directly.
+    # For TrueHD/other EAE codecs: force copy only when EAE is unavailable.
+    _force_audio_copy=0
+    if [ "$cdn_audio_codec" = "eac3" ]; then
+        _force_audio_copy=1
+        echo "$(date '+%H:%M:%S') WRAP force audio copy: EAC3 CDN (always passthrough)" >> "$SPORE_LOG"
+    elif [ "$_needs_eae" = "1" ] && [ -z "$EAE_ROOT" ]; then
+        _force_audio_copy=1
+        echo "$(date '+%H:%M:%S') WRAP force audio copy: EAE unavailable" >> "$SPORE_LOG"
+    fi
+    if [ "$_force_audio_copy" = "1" ]; then
         _acodec_post=""
         _ai3=0
         for idx in "${!newargs[@]}"; do
