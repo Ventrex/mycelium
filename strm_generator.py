@@ -1150,15 +1150,19 @@ def regenerate_spore_stubs(token: str | None = None) -> dict:
     return {"total": total, "regenerated": regenerated, "skipped": skipped, "errors": errors}
 
 
+_PROBE_PRELOAD_BATCH = 10   # max new-to-TorBox preloads queued per run
+
+
 def probe_pending_stubs() -> dict:
     """Background job: probe CDN files for Plex stubs that have no track info yet.
 
-    Finds virtual_items with strm_path but no spore_tracks, checks TorBox library,
-    and probes those already in TorBox (no add_magnet, no waiting).
+    Pass 1 (fast): items already in TorBox library -- probe directly, no add needed.
+    Pass 2 (slow): items not yet in TorBox -- queue up to _PROBE_PRELOAD_BATCH for
+      _preload_torrent (adds to TorBox, waits for ready, probes). Runs over multiple
+      scheduler ticks so the full library is covered without hammering TorBox.
+
     Uses build_fsh=False so no 32MB download per file -- just ffprobe for metadata.
     Fast-start cache is built on first actual Plex play.
-
-    Returns counts: probed / skipped / not_in_torbox / errors.
     """
     if not settings.get("SPORE_ENABLED", cfg.SPORE_ENABLED):
         return {"skipped": "SPORE_ENABLED=false"}
@@ -1168,7 +1172,7 @@ def probe_pending_stubs() -> dict:
     items = db.get_unprobed_spore_items()
     if not items:
         log.debug("Probe pending: nothing to do")
-        return {"probed": 0, "skipped": 0, "not_in_torbox": 0, "errors": 0}
+        return {"probed": 0, "skipped": 0, "queued_preload": 0, "errors": 0}
 
     log.info("Probe pending: %d stubs without track info", len(items))
 
@@ -1179,13 +1183,15 @@ def probe_pending_stubs() -> dict:
         if h:
             by_hash.setdefault(h, []).append(item)
 
-    probed = skipped = not_in_torbox = errors = 0
+    probed = skipped = queued_preload = errors = 0
+    missing_hashes: list[tuple[str, list[dict]]] = []   # not in TorBox yet
 
+    # ── Pass 1: items already in TorBox -- probe immediately ─────────────────
     for info_hash, hash_items in by_hash.items():
         try:
             ready = torbox_mod.find_by_hash(info_hash)
             if not ready or not torbox_mod._is_ready(ready):
-                not_in_torbox += len(hash_items)
+                missing_hashes.append((info_hash, hash_items))
                 continue
 
             torrent_id = ready.get("id")
@@ -1206,15 +1212,15 @@ def probe_pending_stubs() -> dict:
                 if not token:
                     skipped += 1
                     continue
-                # Skip if probed in the meantime (race with preload thread)
-                if db.load_spore_tracks(token):
+                if db.load_spore_tracks(token):   # probed in the meantime
                     skipped += 1
                     continue
 
                 if season and episode:
                     f = _pick_episode_file(files, season, episode)
                     if not f:
-                        log.debug("Probe pending: no file for S%02dE%02d token=%s", season, episode, token)
+                        log.debug("Probe pending: no file for S%02dE%02d token=%s",
+                                  season, episode, token)
                         skipped += 1
                         continue
                     file_id = f.get("id")
@@ -1228,18 +1234,42 @@ def probe_pending_stubs() -> dict:
                     continue
 
                 _catbox.cache_url(token, cdn_url)
-                # build_fsh=False: skip 32MB download, just ffprobe for metadata
                 _preload_spore(cdn_url, token, build_fsh=False)
                 probed += 1
-                time.sleep(0.3)  # small delay to avoid hammering TorBox requestdl
+                time.sleep(0.3)
 
         except Exception as exc:
             log.warning("Probe pending: error for hash %s: %s", info_hash, exc)
             errors += len(hash_items)
 
-    log.info("Probe pending done: probed=%d skipped=%d not_in_torbox=%d errors=%d",
-             probed, skipped, not_in_torbox, errors)
-    return {"probed": probed, "skipped": skipped, "not_in_torbox": not_in_torbox, "errors": errors}
+    # ── Pass 2: items not yet in TorBox -- queue preload in batches ──────────
+    # _preload_torrent adds the torrent, waits for ready, fetches CDN URL and
+    # calls _preload_spore. _preload_semaphore caps concurrency at 3;
+    # _preload_add_lock rate-limits add_magnet to ~8/min.
+    for info_hash, hash_items in missing_hashes[:_PROBE_PRELOAD_BATCH]:
+        vi = hash_items[0]
+        magnet = vi.get("magnet")
+        title  = vi.get("title") or info_hash[:8]
+        if not magnet:
+            skipped += len(hash_items)
+            continue
+        threading.Thread(
+            target=_preload_torrent,
+            args=(info_hash, magnet, title),
+            daemon=True,
+        ).start()
+        queued_preload += 1
+        log.debug("Probe pending: queued preload for %s", title)
+
+    remaining = len(missing_hashes) - queued_preload
+    log.info(
+        "Probe pending done: probed=%d skipped=%d queued_preload=%d remaining=%d errors=%d",
+        probed, skipped, queued_preload, remaining, errors,
+    )
+    return {
+        "probed": probed, "skipped": skipped,
+        "queued_preload": queued_preload, "remaining": remaining, "errors": errors,
+    }
 
 
 def update_stub_from_probe(token: str, audio_streams: list[dict],
