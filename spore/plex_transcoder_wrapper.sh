@@ -36,20 +36,34 @@ for a in "$@"; do
                     spore_minfo="$minfo"
                 fi
             fi
+        elif [[ "$a" == *.strm ]]; then
+            # Plex passes the .strm file PATH to the transcoder.
+            # Read the URL from the file, extract token, rewrite to spore-stream.
+            strm_url=$(cat "$a" 2>/dev/null | tr -d '[:space:]')
+            if [[ "$strm_url" =~ /s(tream|pore-stream)/([a-f0-9]{8,}) ]]; then
+                tok="${BASH_REMATCH[2]}"
+                echo "SPORE-WRAP: .strm path $a -> token=$tok -> spore-stream" >&2
+                a="http://127.0.0.1:8088/spore-stream/$tok"
+                spore_replaced=1
+                _strm_tmp_minfo="/tmp/spore-minfo-$tok.txt"
+                curl -sf "http://127.0.0.1:8088/ui/api/spore-minfo/$tok" \
+                     -o "$_strm_tmp_minfo" 2>/dev/null \
+                     || echo "token=$tok" > "$_strm_tmp_minfo"
+                spore_minfo="$_strm_tmp_minfo"
+                echo "$(date '+%H:%M:%S') WRAP .strm path: token=$tok minfo fetched" >> "$SPORE_LOG"
+            fi
         elif [[ "$a" =~ /s(tream|pore-stream)/([a-f0-9]{8,}) ]]; then
-            # .strm file: Plex passes the URL directly as -i.
-            # Extract token, rewrite to spore-stream, fetch minfo from Mycelium API.
+            # Plex passes the stream URL directly as -i (fallback for URL-based inputs).
             tok="${BASH_REMATCH[2]}"
             echo "SPORE-WRAP: -i stream URL tok=$tok -> spore-stream/$tok" >&2
             a="http://127.0.0.1:8088/spore-stream/$tok"
             spore_replaced=1
-            # Fetch minfo data from Mycelium API into a temp file
             _strm_tmp_minfo="/tmp/spore-minfo-$tok.txt"
             curl -sf "http://127.0.0.1:8088/ui/api/spore-minfo/$tok" \
                  -o "$_strm_tmp_minfo" 2>/dev/null \
                  || echo "token=$tok" > "$_strm_tmp_minfo"
             spore_minfo="$_strm_tmp_minfo"
-            echo "$(date '+%H:%M:%S') WRAP .strm input: token=$tok minfo fetched" >> "$SPORE_LOG"
+            echo "$(date '+%H:%M:%S') WRAP stream URL: token=$tok minfo fetched" >> "$SPORE_LOG"
         fi
     fi
     [ "$a" = "-i" ] && found_i=1
