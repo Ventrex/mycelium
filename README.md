@@ -451,10 +451,6 @@ Admin > Blacklist tab > add the offending hash. The blacklist auto-fills after `
 
 See [open issues](https://github.com/corveck79/mycelium/issues) and [discussions](https://github.com/corveck79/mycelium/discussions).
 
----
-
-## 🔜 Soon
-
 Soon…
 
 ---
