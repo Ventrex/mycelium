@@ -5,6 +5,8 @@ import { api } from '../api';
 
 const navItems = [
   { to: '/', label: 'Discover', icon: '✨', exact: true },
+  { to: '/shows', label: 'Shows', icon: '📺' },
+  { to: '/movies', label: 'Movies', icon: '🎬' },
   { to: '/library', label: 'Library', icon: '📚' },
   { to: '/watchlist', label: 'Watchlist', icon: '★' },
   { to: '/search', label: 'Search', icon: '🔍' },
@@ -14,6 +16,7 @@ const navItems = [
 ];
 
 const adminItems = [
+  { to: '/auto-approve', label: 'Auto-Approve', icon: '🤖' },
   { to: '/admin', label: 'Admin', icon: '⚙️' },
   { to: '/manual', label: 'Manual', icon: '📖' },
 ];
@@ -246,12 +249,15 @@ function RegionPicker({ region }: { region: string }) {
 function Breadcrumb({ path }: { path: string }) {
   const map: Record<string, string> = {
     '/': 'Discover',
+    '/shows': 'Shows',
+    '/movies': 'Movies',
     '/library': 'Library',
     '/watchlist': 'Watchlist',
     '/search': 'Search',
     '/requests': 'My Requests',
     '/wanted': 'Wanted',
     '/settings': 'Settings',
+    '/auto-approve': 'Auto-Approve',
     '/admin': 'Admin',
     '/manual': 'Manual',
     '/login': 'Sign in',

@@ -164,6 +164,10 @@ AUTO_ADD_MIN_RATING = float(_env("AUTO_ADD_MIN_RATING", "6.0"))
 AUTO_ADD_MIN_VOTES = _env_int("AUTO_ADD_MIN_VOTES", 100)
 AUTO_ADD_REGION = _env("AUTO_ADD_REGION", "NL")
 
+# Per-genre auto-approve rules (configured in the Auto-Approve tab, stored in
+# settings). 0 disables the periodic auto-request-trending scan.
+AUTO_APPROVE_CHECK_INTERVAL_HOURS = _env_int("AUTO_APPROVE_CHECK_INTERVAL_HOURS", 12)
+
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")
 RADARR_API_KEY = _env("RADARR_API_KEY", "")
