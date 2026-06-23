@@ -453,6 +453,12 @@ See [open issues](https://github.com/corveck79/mycelium/issues) and [discussions
 
 ---
 
+## 🔜 Soon
+
+Soon…
+
+---
+
 ## 🤝 Contributing
 
 PRs and issues welcome. Keep changes focused, run the tests in `tests/`, and don't break the dashboard. Please don't open issues asking for piracy support - this is for legitimate TorBox subscribers managing their own content.
