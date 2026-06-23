@@ -474,14 +474,19 @@ def _check_auth() -> None:
     if not secret:
         return
     header_secret = request.headers.get("X-Webhook-Secret")
+    auth_header = request.headers.get("Authorization", "")
+    # Seerr/Jellyseerr's webhook agent only exposes a single "Authorization Header"
+    # field (no custom header name support on older versions), so accept the
+    # secret there too - as a raw value or "Bearer <secret>".
+    bearer_secret = auth_header[7:] if auth_header.startswith("Bearer ") else auth_header
     query_secret  = request.args.get("secret")
-    provided = header_secret or query_secret
-    if query_secret and not header_secret:
+    provided = header_secret or bearer_secret or query_secret
+    if query_secret and not header_secret and not bearer_secret:
         # Deprecated: secret in query string leaks via access logs and proxy history.
-        # Migrate to the X-Webhook-Secret header.
+        # Migrate to the X-Webhook-Secret or Authorization header.
         log.warning("Webhook secret passed via ?secret= query param from %s"
-                    " - migrate to X-Webhook-Secret header", request.remote_addr)
-    if provided != secret:
+                    " - migrate to X-Webhook-Secret or Authorization header", request.remote_addr)
+    if not provided or not hmac.compare_digest(provided, secret):
         log.warning("Rejected webhook with bad/missing secret from %s", request.remote_addr)
         abort(401)
 
