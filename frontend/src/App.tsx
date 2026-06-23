@@ -7,6 +7,9 @@ import Library from './pages/Library';
 import Requests from './pages/Requests';
 import Wanted from './pages/Wanted';
 import Settings from './pages/Settings';
+import Shows from './pages/Shows';
+import Movies from './pages/Movies';
+import AutoApprove from './pages/AutoApprove';
 import Login from './pages/Login';
 
 export default function App() {
@@ -18,6 +21,9 @@ export default function App() {
         <Route path="library" element={<Library />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="search" element={<Search />} />
+        <Route path="shows" element={<Shows />} />
+        <Route path="movies" element={<Movies />} />
+        <Route path="auto-approve" element={<AutoApprove />} />
         <Route path="requests" element={<Requests />} />
         <Route path="wanted" element={<Wanted />} />
         <Route path="settings" element={<Settings />} />

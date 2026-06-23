@@ -331,7 +331,7 @@ flowchart LR
 ## 🔒 Security
 
 - All UI and API routes require login. CSRF protection on all forms.
-- **Webhook secret** auto-generated on first start, shown in Admin > Integration Endpoints. Copy to Seerr: Header `X-Webhook-Secret`. Override with `WEBHOOK_SECRET` in `.env`.
+- **Webhook secret** auto-generated on first start, shown in Admin > Integration Endpoints. Copy to Seerr: Header `X-Webhook-Secret`, or paste into Seerr's "Authorization Header" field if it has no custom-header support. Override with `WEBHOOK_SECRET` in `.env`.
 - `/setup` locked after first run - admin only via Settings > Re-run wizard.
 - `/metrics` requires admin session or `X-Metrics-Token` header (`METRICS_TOKEN` in `.env`).
 - WebDAV (`/dav`) uses HTTP Basic Auth against the Mycelium user database.
@@ -450,6 +450,8 @@ Admin > Blacklist tab > add the offending hash. The blacklist auto-fills after `
 ## 🗺 Roadmap
 
 See [open issues](https://github.com/corveck79/mycelium/issues) and [discussions](https://github.com/corveck79/mycelium/discussions).
+
+Soon…
 
 ---
 

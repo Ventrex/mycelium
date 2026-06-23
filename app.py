@@ -8,6 +8,7 @@ import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, request, stream_with_context, url_for
 
+import auto_approve
 import backup
 import catbox
 import nfo_generator
@@ -16,6 +17,7 @@ import cleanup
 import config as cfg
 import continue_watching
 import db
+import discover_prefs
 import health
 import jellyfin
 import library_sync
@@ -35,6 +37,7 @@ import upgrader
 import watchdog
 import zilean
 from config import (
+    AUTO_APPROVE_CHECK_INTERVAL_HOURS,
     AUTO_UPGRADE_ENABLED,
     AUTO_UPGRADE_INTERVAL_HOURS,
     BACKUP_INTERVAL_HOURS,
@@ -334,6 +337,14 @@ def _start_scheduler() -> BackgroundScheduler:
             log.info("Scheduled auto-add every %dh (total slots: %d)",
                      TRENDING_CHECK_INTERVAL_HOURS, _auto_add_total)
 
+        if AUTO_APPROVE_CHECK_INTERVAL_HOURS > 0:
+            scheduler.add_job(
+                auto_approve.run,
+                trigger="interval", hours=AUTO_APPROVE_CHECK_INTERVAL_HOURS,
+                id="auto_approve_scan", next_run_time=None,
+            )
+            log.info("Scheduled auto-approve genre scan every %dh", AUTO_APPROVE_CHECK_INTERVAL_HOURS)
+
         if CONTINUE_WATCHING_INTERVAL_MINUTES > 0:
             scheduler.add_job(
                 continue_watching.prioritize_next_episodes,
@@ -375,7 +386,7 @@ def _start_scheduler() -> BackgroundScheduler:
     # Apply max_instances=1 to all overlap-sensitive jobs already added
     for jid in ("strm_generator", "strm_cleanup", "series_monitor", "movie_sync",
                  "retry_queue", "auto_upgrade", "pack_consolidation",
-                 "trending_precache", "continue_watching", "db_backup",
+                 "trending_precache", "auto_approve_scan", "continue_watching", "db_backup",
                  "catbox_gc", "merge_versions", "quota_warn"):
         try:
             scheduler.modify_job(jid, max_instances=1)
@@ -474,14 +485,19 @@ def _check_auth() -> None:
     if not secret:
         return
     header_secret = request.headers.get("X-Webhook-Secret")
+    auth_header = request.headers.get("Authorization", "")
+    # Seerr/Jellyseerr's webhook agent only exposes a single "Authorization Header"
+    # field (no custom header name support on older versions), so accept the
+    # secret there too - as a raw value or "Bearer <secret>".
+    bearer_secret = auth_header[7:] if auth_header.startswith("Bearer ") else auth_header
     query_secret  = request.args.get("secret")
-    provided = header_secret or query_secret
-    if query_secret and not header_secret:
+    provided = header_secret or bearer_secret or query_secret
+    if query_secret and not header_secret and not bearer_secret:
         # Deprecated: secret in query string leaks via access logs and proxy history.
-        # Migrate to the X-Webhook-Secret header.
+        # Migrate to the X-Webhook-Secret or Authorization header.
         log.warning("Webhook secret passed via ?secret= query param from %s"
-                    " - migrate to X-Webhook-Secret header", request.remote_addr)
-    if provided != secret:
+                    " - migrate to X-Webhook-Secret or Authorization header", request.remote_addr)
+    if not provided or not hmac.compare_digest(provided, secret):
         log.warning("Rejected webhook with bad/missing secret from %s", request.remote_addr)
         abort(401)
 
@@ -1871,17 +1887,116 @@ def ui_api_discover_details():
     return jsonify(detail)
 
 
+@app.get("/ui/api/discover/genres")
+def ui_api_discover_genres():
+    media = request.args.get("type", "movie")
+    all_genres = tmdb.genres(media)
+    return jsonify(genres=discover_prefs.ordered_visible_genres(media, all_genres),
+                   all_genres=all_genres)
+
+
+@app.get("/ui/api/discover/by-genre")
+def ui_api_discover_by_genre():
+    media = request.args.get("type", "movie")
+    genre_id = int(request.args.get("genre") or "0")
+    if not genre_id:
+        return jsonify(error="genre required"), 400
+    page = int(request.args.get("page") or "1")
+    region = _user_region()
+    year_from, year_to = discover_prefs.effective_year_range(media, genre_id)
+    results = tmdb.discover_by_genre(media, genre_id, year_from, year_to, page=page, region=region)
+    _enrich_library_status(results)
+    return jsonify(results=results, year_from=year_from, year_to=year_to)
+
+
+@app.get("/ui/api/discover/search-person")
+def ui_api_discover_search_person():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify(results=[])
+    page = int(request.args.get("page") or "1")
+    return jsonify(results=tmdb.search_person(q, page=page))
+
+
+@app.get("/ui/api/discover/person")
+def ui_api_discover_person():
+    person_id = int(request.args.get("id") or "0")
+    if not person_id:
+        return jsonify(error="id required"), 400
+    detail = tmdb.person_details(person_id)
+    if not detail:
+        return jsonify(error="not found"), 404
+    _enrich_library_status(detail["filmography"])
+    return jsonify(detail)
+
+
+@app.get("/ui/api/discover/collection")
+def ui_api_discover_collection():
+    collection_id = int(request.args.get("id") or "0")
+    if not collection_id:
+        return jsonify(error="id required"), 400
+    detail = tmdb.collection_details(collection_id)
+    if not detail:
+        return jsonify(error="not found"), 404
+    _enrich_library_status(detail["parts"])
+    return jsonify(detail)
+
+
+@app.get("/ui/api/discover-prefs")
+def ui_api_discover_prefs_get():
+    media = request.args.get("type", "movie")
+    return jsonify(discover_prefs.get_prefs(media))
+
+
+@app.post("/ui/api/discover-prefs")
+def ui_api_discover_prefs_set():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    payload = request.get_json(silent=True) or {}
+    media = payload.get("media_type", "movie")
+    discover_prefs.set_prefs(media, payload.get("prefs") or {})
+    return jsonify(status="saved")
+
+
+@app.get("/ui/api/auto-approve-rules")
+def ui_api_auto_approve_rules_get():
+    media = request.args.get("type", "movie")
+    return jsonify(rules=auto_approve.get_rules(media))
+
+
+@app.post("/ui/api/auto-approve-rules")
+def ui_api_auto_approve_rules_set():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    payload = request.get_json(silent=True) or {}
+    media = payload.get("media_type", "movie")
+    auto_approve.set_rules(media, payload.get("rules") or {})
+    return jsonify(status="saved")
+
+
+@app.post("/ui/api/auto-approve-rules/run-now")
+def ui_api_auto_approve_run_now():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    threading.Thread(target=auto_approve.run, name="auto-approve-manual", daemon=True).start()
+    return jsonify(status="started")
+
+
 @app.post("/ui/api/discover/add")
 def ui_api_discover_add():
     """One-click add: resolve TMDB→IMDB, queue for processing.
     For TV the payload may include monitor_mode ('all'|'future'|'selected')
-    and seasons (list of season numbers, used when mode is 'selected')."""
+    and seasons (list of season numbers, used when mode is 'selected').
+    genre_ids/year (if supplied) are checked against the Auto-Approve rules
+    so requests in an auto-approved genre/year skip the pending queue."""
     payload = request.get_json(silent=True) or {}
     tmdb_id = payload.get("tmdb_id")
     media_type = payload.get("media_type") or "movie"
     title = payload.get("title") or ""
     monitor_mode = payload.get("monitor_mode") or "all"
     seasons = payload.get("seasons") or None
+    genre_ids = payload.get("genre_ids") or []
+    year = payload.get("year")
     if not tmdb_id or not title:
         return jsonify(error="tmdb_id and title required"), 400
 
@@ -1889,10 +2004,13 @@ def ui_api_discover_add():
     if not imdb_id:
         return jsonify(error="could not resolve imdb_id"), 400
 
+    genre_auto_approved = auto_approve.is_auto_approved(media_type, genre_ids, year)
+
     user_rec = auth.current_user_record()
     if user_rec and user_rec.get("id"):
         # Multi-user mode: go through approval flow
-        auto = bool(user_rec.get("auto_approve")) or user_rec.get("role") == "admin"
+        auto = (bool(user_rec.get("auto_approve")) or user_rec.get("role") == "admin"
+                or genre_auto_approved)
         status = "approved" if auto else "pending"
         rid = db.create_user_request(user_rec["id"], imdb_id, tmdb_id, media_type,
                                        title, status=status)
@@ -1903,6 +2021,39 @@ def ui_api_discover_add():
     # Single-user / legacy mode: process immediately
     _kick_off_processing(title, imdb_id, media_type, tmdb_id, monitor_mode, seasons)
     return jsonify(status="queued", imdb_id=imdb_id)
+
+
+@app.post("/ui/api/discover/add-collection")
+def ui_api_discover_add_collection():
+    """Request every movie in a TMDB collection (e.g. a trilogy) in one go."""
+    payload = request.get_json(silent=True) or {}
+    collection_id = payload.get("collection_id")
+    if not collection_id:
+        return jsonify(error="collection_id required"), 400
+    detail = tmdb.collection_details(collection_id)
+    if not detail:
+        return jsonify(error="not found"), 404
+
+    user_rec = auth.current_user_record()
+    queued, pending = [], []
+    for part in detail["parts"]:
+        if part.get("library_status"):
+            continue  # already requested/in library
+        imdb_id = tmdb.tmdb_to_imdb(part["tmdb_id"], media_type="movie")
+        if not imdb_id:
+            continue
+        if user_rec and user_rec.get("id"):
+            auto = bool(user_rec.get("auto_approve")) or user_rec.get("role") == "admin"
+            status = "approved" if auto else "pending"
+            db.create_user_request(user_rec["id"], imdb_id, part["tmdb_id"], "movie",
+                                     part["title"], status=status)
+            (queued if status == "approved" else pending).append(part["title"])
+            if status == "approved":
+                _kick_off_processing(part["title"], imdb_id, "movie", part["tmdb_id"])
+        else:
+            _kick_off_processing(part["title"], imdb_id, "movie", part["tmdb_id"])
+            queued.append(part["title"])
+    return jsonify(status="ok", queued=queued, pending=pending)
 
 
 def _kick_off_processing(title: str, imdb_id: str, media_type: str,

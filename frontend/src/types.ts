@@ -43,6 +43,66 @@ export interface TmdbDetail extends TmdbItem {
   trailers?: Array<{ key: string; name: string; site: string }>;
   providers?: { flatrate: Provider[]; link: string | null };
   recommendations?: TmdbItem[];
+  collection?: {
+    id: number;
+    name: string;
+    poster_path: string | null;
+    backdrop_path: string | null;
+  } | null;
+}
+
+export interface Genre {
+  id: number;
+  name: string;
+}
+
+export interface DiscoverPrefs {
+  hidden_genres: number[];
+  genre_order: number[];
+  year_from: number | null;
+  year_to: number | null;
+  genre_years: Record<string, { from: number | null; to: number | null }>;
+}
+
+export interface AutoApproveRule {
+  enabled: boolean;
+  year_from: number | null;
+  year_to: number | null;
+  auto_request_trending: boolean;
+}
+
+export type AutoApproveRules = Record<string, AutoApproveRule>;
+
+export interface TmdbPerson {
+  tmdb_id: number;
+  media_type: 'person';
+  name: string;
+  profile_path: string | null;
+  known_for_department: string | null;
+  popularity: number;
+  known_for: TmdbItem[];
+}
+
+export type FilmographyItem = TmdbItem & { character?: string };
+
+export interface PersonDetail {
+  tmdb_id: number;
+  name: string;
+  biography: string;
+  profile_path: string | null;
+  birthday: string | null;
+  place_of_birth: string | null;
+  known_for_department: string | null;
+  filmography: FilmographyItem[];
+}
+
+export interface Collection {
+  tmdb_id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  parts: TmdbItem[];
 }
 
 export interface WatchlistItem {

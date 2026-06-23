@@ -283,6 +283,7 @@ def details(media_type: str, tmdb_id: int, region: str = "NL") -> dict | None:
     item["imdb_id"] = (data.get("external_ids") or {}).get("imdb_id") or data.get("imdb_id")
     item["runtime"] = data.get("runtime") or (data.get("episode_run_time") or [None])[0]
     item["genres"] = [g.get("name") for g in (data.get("genres") or [])]
+    item["genre_ids"] = [g.get("id") for g in (data.get("genres") or [])]
     item["tagline"] = data.get("tagline") or ""
     item["status"] = data.get("status") or ""
     item["homepage"] = data.get("homepage") or ""
@@ -312,7 +313,132 @@ def details(media_type: str, tmdb_id: int, region: str = "NL") -> dict | None:
     }
     item["recommendations"] = [_norm_item(r, media_type=media_type)
                                 for r in (data.get("recommendations") or {}).get("results", [])[:12]]
+    if media_type == "movie":
+        collection = data.get("belongs_to_collection")
+        item["collection"] = ({"id": collection.get("id"), "name": collection.get("name"),
+                                "poster_path": collection.get("poster_path"),
+                                "backdrop_path": collection.get("backdrop_path")}
+                               if collection else None)
     return item
+
+
+# ── Genres / Discover-by-genre ────────────────────────────────────────────────
+
+def genres(media_type: str = "movie") -> list[dict]:
+    """Return [{id, name}] for movie or tv genres. Cached 24h in settings table."""
+    import json as _json
+    import time as _time
+    import db
+    cache_key = f"_tmdb_genre_cache_{media_type}"
+    cached = db.get_setting(cache_key)
+    if cached:
+        try:
+            payload = _json.loads(cached)
+            if _time.time() - payload.get("ts", 0) < 86400:
+                return payload.get("genres") or []
+        except (ValueError, TypeError):
+            pass
+    data = _get(f"/genre/{media_type}/list")
+    result = (data or {}).get("genres") or []
+    db.set_setting(cache_key, _json.dumps({"ts": _time.time(), "genres": result}))
+    return result
+
+
+def discover_by_genre(media_type: str, genre_id: int, year_from: int | None = None,
+                       year_to: int | None = None, page: int = 1, region: str = "NL",
+                       sort_by: str = "popularity.desc") -> list[dict]:
+    """Discover movies/tv for a single genre, optionally bounded by release-year range."""
+    date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
+    params: dict = {
+        "with_genres": genre_id,
+        "sort_by": sort_by,
+        "page": page,
+        "include_adult": "false",
+        "watch_region": region,
+    }
+    if year_from:
+        params[f"{date_field}.gte"] = f"{year_from}-01-01"
+    if year_to:
+        params[f"{date_field}.lte"] = f"{year_to}-12-31"
+    data = _get(f"/discover/{media_type}", params=params)
+    if not data:
+        return []
+    return [_norm_item(i, media_type=media_type) for i in (data.get("results") or [])]
+
+
+# ── Person search ─────────────────────────────────────────────────────────────
+
+def search_person(query: str, page: int = 1) -> list[dict]:
+    """Search TMDB for people (actors/actresses). Returns normalized person dicts."""
+    if not query.strip():
+        return []
+    data = _get("/search/person", params={"query": query, "page": page, "include_adult": "false"})
+    if not data:
+        return []
+    out = []
+    for p in (data.get("results") or []):
+        out.append({
+            "tmdb_id": p.get("id"),
+            "media_type": "person",
+            "name": p.get("name"),
+            "profile_path": p.get("profile_path"),
+            "known_for_department": p.get("known_for_department"),
+            "popularity": p.get("popularity") or 0,
+            "known_for": [_norm_item(k) for k in (p.get("known_for") or [])
+                          if k.get("media_type") in ("movie", "tv")],
+        })
+    return out
+
+
+def person_details(person_id: int) -> dict | None:
+    """Person bio + filmography (combined movie/tv credits as cast)."""
+    data = _get(f"/person/{person_id}", params={"append_to_response": "combined_credits"})
+    if not data:
+        return None
+    credits = ((data.get("combined_credits") or {}).get("cast")) or []
+    seen: set[tuple[str, int]] = set()
+    filmography = []
+    for c in credits:
+        mt = c.get("media_type")
+        if mt not in ("movie", "tv"):
+            continue
+        key = (mt, c.get("id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        item = _norm_item(c, media_type=mt)
+        item["character"] = c.get("character") or ""
+        filmography.append(item)
+    filmography.sort(key=lambda x: x.get("year") or "0000", reverse=True)
+    return {
+        "tmdb_id": data.get("id"),
+        "name": data.get("name"),
+        "biography": data.get("biography") or "",
+        "profile_path": data.get("profile_path"),
+        "birthday": data.get("birthday"),
+        "place_of_birth": data.get("place_of_birth"),
+        "known_for_department": data.get("known_for_department"),
+        "filmography": filmography,
+    }
+
+
+# ── Collections ────────────────────────────────────────────────────────────────
+
+def collection_details(collection_id: int) -> dict | None:
+    """Movie collection (e.g. a trilogy): metadata + member movies."""
+    data = _get(f"/collection/{collection_id}")
+    if not data:
+        return None
+    parts = [_norm_item(p, media_type="movie") for p in (data.get("parts") or [])]
+    parts.sort(key=lambda x: x.get("year") or "0000")
+    return {
+        "tmdb_id": data.get("id"),
+        "name": data.get("name"),
+        "overview": data.get("overview") or "",
+        "poster_path": data.get("poster_path"),
+        "backdrop_path": data.get("backdrop_path"),
+        "parts": parts,
+    }
 
 
 # Common Dutch / European providers  -  IDs from TMDB

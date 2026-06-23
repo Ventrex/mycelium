@@ -9,6 +9,12 @@ import type {
   MediaType,
   WantedMovie,
   WantedEpisode,
+  Genre,
+  DiscoverPrefs,
+  AutoApproveRules,
+  TmdbPerson,
+  PersonDetail,
+  Collection,
 } from './types';
 
 const csrfToken = (): string => {
@@ -72,7 +78,12 @@ export const api = {
     tmdb_id: number,
     media_type: MediaType,
     title: string,
-    opts?: { monitor_mode?: 'all' | 'future' | 'selected'; seasons?: number[] },
+    opts?: {
+      monitor_mode?: 'all' | 'future' | 'selected';
+      seasons?: number[];
+      genre_ids?: number[];
+      year?: string | number | null;
+    },
   ) =>
     http<{ status: string; request_id?: number; imdb_id?: string; error?: string }>(
       '/ui/api/discover/add',
@@ -81,6 +92,47 @@ export const api = {
         body: JSON.stringify({ tmdb_id, media_type, title, ...opts }),
       },
     ),
+  addCollection: (collection_id: number) =>
+    http<{ status: string; queued: string[]; pending: string[] }>('/ui/api/discover/add-collection', {
+      method: 'POST',
+      body: JSON.stringify({ collection_id }),
+    }),
+
+  // Genre browsing (Shows / Movies tabs)
+  genres: (type: MediaType = 'movie') =>
+    http<{ genres: Genre[]; all_genres: Genre[] }>(`/ui/api/discover/genres?type=${type}`),
+  byGenre: (type: MediaType, genreId: number, page = 1) =>
+    http<{ results: TmdbItem[]; year_from: number | null; year_to: number | null }>(
+      `/ui/api/discover/by-genre?type=${type}&genre=${genreId}&page=${page}`,
+    ),
+  discoverPrefsGet: (type: MediaType = 'movie') =>
+    http<DiscoverPrefs>(`/ui/api/discover-prefs?type=${type}`),
+  discoverPrefsSet: (type: MediaType, prefs: DiscoverPrefs) =>
+    http<{ status: string }>('/ui/api/discover-prefs', {
+      method: 'POST',
+      body: JSON.stringify({ media_type: type, prefs }),
+    }),
+
+  // Person search / detail
+  searchPerson: (q: string, page = 1) =>
+    http<{ results: TmdbPerson[] }>(`/ui/api/discover/search-person?q=${encodeURIComponent(q)}&page=${page}`),
+  personDetails: (id: number) =>
+    http<PersonDetail>(`/ui/api/discover/person?id=${id}`),
+
+  // Collections (e.g. movie trilogies)
+  collectionDetails: (id: number) =>
+    http<Collection>(`/ui/api/discover/collection?id=${id}`),
+
+  // Auto-approve rules (per genre/year, Auto-Approve tab)
+  autoApproveRulesGet: (type: MediaType = 'movie') =>
+    http<{ rules: AutoApproveRules }>(`/ui/api/auto-approve-rules?type=${type}`),
+  autoApproveRulesSet: (type: MediaType, rules: AutoApproveRules) =>
+    http<{ status: string }>('/ui/api/auto-approve-rules', {
+      method: 'POST',
+      body: JSON.stringify({ media_type: type, rules }),
+    }),
+  autoApproveRunNow: () =>
+    http<{ status: string }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
 
   // Watchlist
   watchlist: () => http<{ items: WatchlistItem[] }>('/ui/api/watchlist'),

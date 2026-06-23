@@ -92,14 +92,11 @@ export default function DetailModal({
 
   const addMutation = useMutation({
     mutationFn: () =>
-      api.addToLibrary(
-        detail!.tmdb_id,
-        detail!.media_type,
-        detail!.title,
-        detail!.media_type === 'tv'
-          ? { monitor_mode: monitorMode, seasons: selectedSeasons }
-          : undefined,
-      ),
+      api.addToLibrary(detail!.tmdb_id, detail!.media_type, detail!.title, {
+        ...(detail!.media_type === 'tv' ? { monitor_mode: monitorMode, seasons: selectedSeasons } : {}),
+        genre_ids: detail!.genre_ids,
+        year: detail!.year,
+      }),
     onMutate: () => setAddStatus('adding'),
     onSuccess: (r) => {
       if (r.status === 'pending') {
@@ -111,6 +108,14 @@ export default function DetailModal({
       }
     },
     onError: () => setAddStatus('error'),
+  });
+
+  const [collectionStatus, setCollectionStatus] = useState<'idle' | 'adding' | 'done' | 'error'>('idle');
+  const collectionMutation = useMutation({
+    mutationFn: () => api.addCollection(detail!.collection!.id),
+    onMutate: () => setCollectionStatus('adding'),
+    onSuccess: () => setCollectionStatus('done'),
+    onError: () => setCollectionStatus('error'),
   });
 
   const toggleSeason = (n: number) =>
@@ -139,7 +144,7 @@ export default function DetailModal({
 
   // Reset state when modal opens fresh
   useEffect(() => {
-    if (open) { setAddStatus('idle'); setShowTrailer(false); setShowPlayer(false); }
+    if (open) { setAddStatus('idle'); setCollectionStatus('idle'); setShowTrailer(false); setShowPlayer(false); }
   }, [open, tmdbId]);
 
   // Esc to close
@@ -229,6 +234,32 @@ export default function DetailModal({
                 <p className="text-sm leading-relaxed mt-4 max-w-3xl">
                   {detail.overview || 'No overview available.'}
                 </p>
+
+                {detail.media_type === 'movie' && detail.collection && (
+                  <div className="mt-4 bg-bg/60 border border-border rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-1">
+                        Part of a collection
+                      </div>
+                      <div className="text-sm font-semibold">{detail.collection.name}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => collectionMutation.mutate()}
+                      disabled={collectionStatus === 'adding' || collectionStatus === 'done'}
+                      className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60
+                                  font-semibold text-xs whitespace-nowrap"
+                    >
+                      {collectionStatus === 'adding'
+                        ? 'Requesting...'
+                        : collectionStatus === 'done'
+                        ? 'Requested ✓'
+                        : collectionStatus === 'error'
+                        ? 'Retry'
+                        : 'Request entire collection'}
+                    </button>
+                  </div>
+                )}
 
                 {detail.media_type === 'tv' && (
                   <div className="mt-4 bg-bg/60 border border-border rounded-lg p-3">
