@@ -378,6 +378,26 @@ export default function DetailModal({
                       ▶ Play
                     </button>
                   )}
+                  {canPlay &&
+                    detail.imdb_id &&
+                    detail.media_type === 'movie' &&
+                    libStatus !== 'available' &&
+                    libStatus !== 'success' && (
+                      <button
+                        type="button"
+                        // Netflix-style: request to the library in the background and start
+                        // watching now. The webplayer finds and streams a web-compatible
+                        // release via TorBox on its own, independent of the .strm request.
+                        onClick={() => {
+                          if (addStatus === 'idle') addMutation.mutate();
+                          setShowPlayer(true);
+                        }}
+                        className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500
+                                   text-white font-semibold text-sm transition-colors"
+                      >
+                        ▶ Request &amp; play
+                      </button>
+                    )}
                   <button
                     type="button"
                     onClick={() => watchlistMutation.mutate()}
