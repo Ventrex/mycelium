@@ -172,6 +172,12 @@ AUTO_APPROVE_CHECK_INTERVAL_HOURS = _env_int("AUTO_APPROVE_CHECK_INTERVAL_HOURS"
 # day can't flood TorBox. Set the limit to 0 for no cap.
 AUTO_APPROVE_DAILY_HOUR = _env_int("AUTO_APPROVE_DAILY_HOUR", 4)
 AUTO_APPROVE_DAILY_LIMIT = _env_int("AUTO_APPROVE_DAILY_LIMIT", 100)
+# How many new titles a single genre may contribute per run, and how many TMDB
+# discover pages to scan per genre (20 results each) to find that many. The
+# daily limit above is the real ceiling; these just spread the budget and make
+# sure the scan looks past the same top-20 popular titles every run.
+AUTO_APPROVE_PER_GENRE_LIMIT = _env_int("AUTO_APPROVE_PER_GENRE_LIMIT", 50)
+AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")

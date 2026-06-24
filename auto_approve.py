@@ -26,12 +26,13 @@ from config import (
     AUTO_ADD_MIN_VOTES,
     AUTO_ADD_REGION,
     AUTO_APPROVE_DAILY_LIMIT,
+    AUTO_APPROVE_MAX_PAGES,
+    AUTO_APPROVE_PER_GENRE_LIMIT,
 )
 from webhook_parser import MediaRequest
 
 log = logging.getLogger(__name__)
 
-AUTO_REQUEST_PER_GENRE_LIMIT = 5
 FAVORITE_ACTOR_PER_ACTOR_LIMIT = 3
 FAVORITE_ACTOR_RECENCY_YEARS = 1
 
@@ -193,44 +194,35 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
     return total
 
 
-def run(limit: int | None = None) -> int:
-    """Scheduled job: for every genre with auto_request_trending enabled,
-    fetch the most popular items in that genre/year window and queue the
-    ones we don't have yet - this is what auto-fills the library. Also
-    queues recent/upcoming work for any favorited actor.
-
-    `limit` caps how many new titles a single run queues (defaults to
-    AUTO_APPROVE_DAILY_LIMIT; 0 or None means no cap). Already-requested
-    movies and monitored series are skipped, so nothing is requested twice."""
-    if limit is None:
-        limit = AUTO_APPROVE_DAILY_LIMIT
-    cap = limit if limit and limit > 0 else None
-
-    total = 0
-    seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie"}
-    seen_series = {s["imdb_id"] for s in db.get_all_monitored_series()}
-    movie_bl = db.get_content_blacklist_ids("movie")
-    tv_bl = db.get_content_blacklist_ids("tv")
-    person_bl = db.get_content_blacklist_ids("person")
-
-    for media_type, queue_fn, seen, media_bl in (("movie", _queue_movie, seen_movies, movie_bl),
-                                                  ("tv", _queue_series, seen_series, tv_bl)):
-        if cap is not None and total >= cap:
+def _fill_media_type(media_type: str, queue_fn, seen: set[str], media_bl: set[int],
+                      person_bl: set[int], cap: int | None) -> int:
+    """Queue up to `cap` new titles across all enabled/auto-fill genres for one
+    media type, scanning multiple TMDB pages per genre. Returns how many were
+    queued (None cap means no ceiling)."""
+    rules = get_rules(media_type)
+    queued = 0
+    for genre_id_str, rule in rules.items():
+        if cap is not None and queued >= cap:
             break
-        rules = get_rules(media_type)
-        for genre_id_str, rule in rules.items():
-            if cap is not None and total >= cap:
+        if not rule.get("enabled") or not rule.get("auto_request_trending"):
+            continue
+        genre_id = int(genre_id_str)
+        # Scan multiple TMDB pages: page 1 alone (top-20 popular) is mostly
+        # titles we already have, so without paging only a handful are ever new.
+        added = 0
+        for page in range(1, AUTO_APPROVE_MAX_PAGES + 1):
+            if added >= AUTO_APPROVE_PER_GENRE_LIMIT:
                 break
-            if not rule.get("enabled") or not rule.get("auto_request_trending"):
-                continue
-            genre_id = int(genre_id_str)
+            if cap is not None and queued + added >= cap:
+                break
             items = tmdb.discover_by_genre(media_type, genre_id, rule.get("year_from"),
-                                            rule.get("year_to"), region=AUTO_ADD_REGION)
-            added = 0
+                                            rule.get("year_to"), page=page, region=AUTO_ADD_REGION)
+            if not items:
+                break  # no more results in this genre/year window
             for item in items:
-                if added >= AUTO_REQUEST_PER_GENRE_LIMIT:
+                if added >= AUTO_APPROVE_PER_GENRE_LIMIT:
                     break
-                if cap is not None and total + added >= cap:
+                if cap is not None and queued + added >= cap:
                     break
                 if item.get("tmdb_id") in media_bl:
                     continue
@@ -240,9 +232,51 @@ def run(limit: int | None = None) -> int:
                     continue
                 if queue_fn(item, seen):
                     added += 1
-            if added:
-                log.info("Auto-approve genre=%s/%s: %d new item(s) queued", media_type, genre_id, added)
-            total += added
+        if added:
+            log.info("Auto-approve genre=%s/%s: %d new item(s) queued", media_type, genre_id, added)
+        queued += added
+    return queued
+
+
+def run(limit: int | None = None) -> int:
+    """Scheduled job: for every genre with auto_request_trending enabled,
+    fetch the most popular items in that genre/year window and queue the
+    ones we don't have yet - this is what auto-fills the library. Also
+    queues recent/upcoming work for any favorited actor.
+
+    `limit` caps how many new titles a single run queues (defaults to
+    AUTO_APPROVE_DAILY_LIMIT; 0 or None means no cap). The budget is split
+    evenly between movies and series so neither starves the other; any unused
+    movie budget rolls over to series. Already-requested movies and monitored
+    series are skipped, so nothing is requested twice."""
+    if limit is None:
+        limit = AUTO_APPROVE_DAILY_LIMIT
+    cap = limit if limit and limit > 0 else None
+
+    seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie"}
+    seen_series = {s["imdb_id"] for s in db.get_all_monitored_series()}
+    movie_bl = db.get_content_blacklist_ids("movie")
+    tv_bl = db.get_content_blacklist_ids("tv")
+    person_bl = db.get_content_blacklist_ids("person")
+
+    # Split the daily budget so movies can't eat the whole cap before series
+    # are even looked at. Movies get the rounding remainder; whatever movies
+    # leave unused rolls over to series.
+    if cap is None:
+        movie_cap = series_cap_base = None
+    else:
+        movie_cap = cap - cap // 2
+        series_cap_base = cap // 2
+
+    movies_added = _fill_media_type("movie", _queue_movie, seen_movies, movie_bl, person_bl, movie_cap)
+
+    if cap is None:
+        series_cap = None
+    else:
+        series_cap = series_cap_base + (movie_cap - movies_added)  # roll over unused movie budget
+    series_added = _fill_media_type("tv", _queue_series, seen_series, tv_bl, person_bl, series_cap)
+
+    total = movies_added + series_added
 
     remaining = None if cap is None else max(cap - total, 0)
     if remaining is None or remaining > 0:
