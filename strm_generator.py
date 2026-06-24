@@ -49,6 +49,12 @@ _TRAILER_RE = re.compile(
 _MIN_MOVIE_SIZE = 200 * 1024 * 1024  # 200 MB  -  anything smaller is likely a trailer/sample
 
 
+# =============================================================================
+# SHARED UTILITIES
+# Naam-parsing, pad-opbouw, bestandsdetectie.
+# Gebruikt door zowel Jellyfin .strm als Plex Spore -- voorzichtig wijzigen.
+# =============================================================================
+
 def _is_video(name: str) -> bool:
     return Path(name).suffix.lower() in _VIDEO_EXTS
 
@@ -67,6 +73,16 @@ def _pick_main_movie_file(files: list[dict]) -> dict | None:
         return None
     big = [f for f in non_trailer if (f.get('size') or 0) >= _MIN_MOVIE_SIZE]
     return max(big or non_trailer, key=lambda f: f.get('size') or 0)
+
+
+def _pick_episode_file(files: list[dict], season: int, episode: int) -> dict | None:
+    """Find the file in a season pack matching SxxExx. Falls back to None if no match."""
+    ep_re = re.compile(rf'[Ss]0?{season}[Ee]0?{episode}\b', re.IGNORECASE)
+    videos = [f for f in files if _is_video(f.get('name') or '')]
+    matched = [f for f in videos if ep_re.search(f.get('name') or '')]
+    if matched:
+        return max(matched, key=lambda f: f.get('size') or 0)
+    return None
 
 
 def _clean_torrent_name(name: str) -> str:
@@ -151,10 +167,86 @@ def _extract_year(name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# ── Jellyfin: NFO en mapbeheer ────────────────────────────────────────────────
+# NFO sidecars, canonieke mapnamen, IMDB-titelherstel.
+# Alles hier raakt uitsluitend Jellyfin; Plex Spore stubs blijven onaangetast.
+
+def _fileinfo_xml(quality: str | None,
+                   audio_tracks: list[dict] | None = None,
+                   sub_tracks: list[dict] | None = None) -> str:
+    """Return a <fileinfo><streamdetails> XML block for Plex/Kodi NFO files.
+
+    Plex reads this to determine codec and make Direct Play / transcode decisions
+    without having to probe the actual file. Without this, Video=None and Plex
+    refuses to play .strm files (error 4294967283).
+
+    quality: '2160p', '1080p', '720p', or None (defaults to 1080p).
+    audio_tracks / sub_tracks: real tracks from CDN probe; falls back to defaults.
+    """
+    q = (quality or "").lower()
+    if "2160" in q or "4k" in q or "uhd" in q:
+        v_codec, v_w, v_h = "hevc", 3840, 2160
+    elif "720" in q:
+        v_codec, v_w, v_h = "h264", 1280, 720
+    else:
+        v_codec, v_w, v_h = "h264", 1920, 1080
+
+    video_xml = (
+        "      <video>\n"
+        f"        <codec>{v_codec}</codec>\n"
+        f"        <width>{v_w}</width>\n"
+        f"        <height>{v_h}</height>\n"
+        "      </video>\n"
+    )
+
+    audio_xml = ""
+    if audio_tracks:
+        for at in audio_tracks:
+            codec   = (at.get("codec") or at.get("codec_name") or "eac3").lower()
+            ch      = int(at.get("channels") or 6)
+            lang    = ((at.get("tags") or {}).get("language") or at.get("language") or "und")[:3]
+            audio_xml += (
+                "      <audio>\n"
+                f"        <codec>{codec}</codec>\n"
+                f"        <channels>{ch}</channels>\n"
+                f"        <language>{lang}</language>\n"
+                "      </audio>\n"
+            )
+    else:
+        audio_xml = (
+            "      <audio>\n"
+            "        <codec>eac3</codec>\n"
+            "        <channels>6</channels>\n"
+            "        <language>und</language>\n"
+            "      </audio>\n"
+        )
+
+    sub_xml = ""
+    for st in (sub_tracks or []):
+        lang = ((st.get("tags") or {}).get("language") or st.get("language") or "und")[:3]
+        sub_xml += (
+            "      <subtitle>\n"
+            f"        <language>{lang}</language>\n"
+            "      </subtitle>\n"
+        )
+
+    return (
+        "  <fileinfo>\n"
+        "    <streamdetails>\n"
+        f"{video_xml}"
+        f"{audio_xml}"
+        f"{sub_xml}"
+        "    </streamdetails>\n"
+        "  </fileinfo>\n"
+    )
+
+
 def _write_nfo(strm_path: Path, imdb_id: str | None, tmdb_id: int | None = None,
-               media_type: str = "movie", nfo_path: Path | None = None) -> None:
-    """Write a Kodi/Jellyfin NFO sidecar. nfo_path overrides the default
-    (strm_path.with_suffix('.nfo')) so callers can write tvshow.nfo anywhere."""
+               media_type: str = "movie", nfo_path: Path | None = None,
+               quality: str | None = None) -> None:
+    """Write a Kodi/Jellyfin/Plex NFO sidecar. nfo_path overrides the default
+    (strm_path.with_suffix('.nfo')) so callers can write tvshow.nfo anywhere.
+    Includes <fileinfo><streamdetails> so Plex knows the codec for Direct Play."""
     if not imdb_id and not tmdb_id:
         return
     nfo_path = nfo_path or strm_path.with_suffix(".nfo")
@@ -164,23 +256,29 @@ def _write_nfo(strm_path: Path, imdb_id: str | None, tmdb_id: int | None = None,
     year = int(m.group(1)) if m else None
     title = _YEAR_RE.sub("", strm_path.parent.name).replace("()", "").strip() if m else strm_path.parent.name
 
+    fileinfo = _fileinfo_xml(quality)
+
+    uid_tags = ""
+    if imdb_id:
+        uid_tags += f'  <uniqueid type="imdb" default="true">{imdb_id}</uniqueid>\n'
+    if tmdb_id:
+        uid_tags += f'  <uniqueid type="tmdb">{tmdb_id}</uniqueid>\n'
+
     if media_type == "movie":
         year_tag = f"\n  <year>{year}</year>" if year else ""
-        uid_tags = ""
-        if imdb_id:
-            uid_tags += f'  <uniqueid type="imdb" default="true">{imdb_id}</uniqueid>\n'
-        if tmdb_id:
-            uid_tags += f'  <uniqueid type="tmdb">{tmdb_id}</uniqueid>\n'
         content = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-            f"<movie>\n  <title>{title}</title>{year_tag}\n{uid_tags}</movie>\n"
+            f"<movie>\n  <title>{title}</title>{year_tag}\n{uid_tags}{fileinfo}</movie>\n"
+        )
+    elif media_type == "episode":
+        # Per-episode NFO: Plex uses this to read <fileinfo> codec data for .strm playback
+        # Season/episode numbers are encoded in the filename (SxxExx); we just need fileinfo
+        content = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            f"<episodedetails>\n{uid_tags}{fileinfo}</episodedetails>\n"
         )
     else:
-        uid_tags = ""
-        if imdb_id:
-            uid_tags += f'  <uniqueid type="imdb" default="true">{imdb_id}</uniqueid>\n'
-        if tmdb_id:
-            uid_tags += f'  <uniqueid type="tmdb">{tmdb_id}</uniqueid>\n'
+        # tvshow.nfo - no fileinfo needed (Plex reads episode NFOs for codec info)
         content = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             f"<tvshow>\n  <title>{title}</title>\n{uid_tags}</tvshow>\n"
@@ -190,6 +288,70 @@ def _write_nfo(strm_path: Path, imdb_id: str | None, tmdb_id: int | None = None,
         log.info("Wrote NFO: %s", nfo_path)
     except Exception as exc:
         log.warning("Could not write NFO %s: %s", nfo_path, exc)
+
+
+def update_nfo_streamdetails(strm_path: Path, quality: str | None,
+                              audio_tracks: list[dict], sub_tracks: list[dict]) -> bool:
+    """Update or add <fileinfo><streamdetails> in an existing NFO with real track info.
+
+    Called after CDN probe so Plex gets accurate codec, language, and channel info.
+    Rewrites the <fileinfo> block in-place; preserves all other NFO content.
+    Returns True if the NFO was updated.
+    """
+    nfo_path = strm_path.with_suffix(".nfo")
+    if not nfo_path.exists():
+        return False
+    try:
+        text = nfo_path.read_text(encoding="utf-8")
+        new_fileinfo = _fileinfo_xml(quality, audio_tracks, sub_tracks)
+        # Remove existing <fileinfo>...</fileinfo> block if present
+        import re as _re
+        text = _re.sub(r'\s*<fileinfo>.*?</fileinfo>\s*', '\n', text,
+                       flags=_re.DOTALL)
+        # Insert before closing tag (</movie>, </tvshow>, </episodedetails>)
+        text = _re.sub(r'(</(?:movie|tvshow|episodedetails)>)',
+                       f"{new_fileinfo}\\1", text)
+        nfo_path.write_text(text, encoding="utf-8")
+        log.debug("NFO streamdetails updated: %s", nfo_path.name)
+        return True
+    except Exception as exc:
+        log.warning("Could not update NFO streamdetails %s: %s", nfo_path, exc)
+        return False
+
+
+def backfill_nfo_streamdetails() -> dict:
+    """Add/update <fileinfo> in all existing NFO files that lack codec info.
+
+    For items with probed spore_tracks: uses real audio/sub data.
+    For unprobed items: uses quality-based defaults (hevc/h264, EAC3 6ch).
+    Safe to run multiple times; skips items without a strm_path.
+    """
+    items = db.get_all_virtual_items()
+    updated = skipped = errors = 0
+    for item in items:
+        strm_path_str = item.get("strm_path")
+        if not strm_path_str:
+            skipped += 1
+            continue
+        strm_path = Path(strm_path_str)
+        if not strm_path.exists():
+            skipped += 1
+            continue
+        try:
+            quality = item.get("quality")
+            tracks = db.load_spore_tracks(item["token"]) or {}
+            audio  = tracks.get("audio") or []
+            subs   = tracks.get("subs") or []
+            if update_nfo_streamdetails(strm_path, quality, audio, subs):
+                updated += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            log.warning("backfill_nfo: error for %s: %s", strm_path_str, exc)
+            errors += 1
+    log.info("backfill_nfo_streamdetails: updated=%d skipped=%d errors=%d",
+             updated, skipped, errors)
+    return {"updated": updated, "skipped": skipped, "errors": errors}
 
 
 def _canonical_movie_folder(imdb_id: str, fallback_title: str | None = None,
@@ -331,13 +493,22 @@ _preload_state = {"last_add": 0.0}            # mutable so no global keyword nee
 _PRELOAD_MIN_INTERVAL = 7.0                   # seconds between add_magnet calls (~8/min, limit is 10/min)
 
 
+# ── Catbox: CDN URL cache ─────────────────────────────────────────────────────
+# TorBox CDN URL ophalen en opslaan. Gedeeld door Jellyfin en Spore.
+
 def _cache_cdn_url(info_hash: str, ready_item: dict, title: str) -> None:
-    """Fetch CDN URL for a ready TorBox item and store in catbox URL cache.
-    Uses _pick_main_movie_file to select the correct file."""
+    """Fetch CDN URLs for ALL tokens with this hash and update catbox URL cache + Spore stubs.
+
+    Movies: one token, picks largest video file.
+    Season packs: N episode tokens sharing the same hash, each gets its own file via SxxExx match.
+    """
     try:
+        import catbox as _catbox
         torrent_id = ready_item.get("id")
         files = ready_item.get("files") or []
-        if not files or not torrent_id:
+        if not torrent_id:
+            return
+        if not files:
             # TorBox sometimes omits the files list; force a fresh lookup
             fresh = torbox_mod.find_by_hash(info_hash, force_refresh=True)
             if fresh:
@@ -346,18 +517,38 @@ def _cache_cdn_url(info_hash: str, ready_item: dict, title: str) -> None:
         if not files or not torrent_id:
             log.debug("Preload: no files for %s, CDN cache skipped", title)
             return
-        main = _pick_main_movie_file(files)
-        file_id = (main or files[0]).get("id")
-        cdn_url = _get_stream_url(torrent_id, file_id)
-        if not cdn_url:
+
+        all_items = db.get_virtual_items_by_hash(info_hash)
+        if not all_items:
             return
-        vi = db.get_virtual_item_by_hash(info_hash)
-        token = vi["token"] if vi else None
-        if token:
-            import catbox as _catbox
+
+        cached_count = 0
+        for vi in all_items:
+            token   = vi.get("token")
+            season  = vi.get("season")
+            episode = vi.get("episode")
+            if not token:
+                continue
+            if season and episode:
+                # Episode in a season pack: find the specific file by SxxExx
+                f = _pick_episode_file(files, season, episode)
+                if not f:
+                    log.debug("Preload: no file match S%02dE%02d for %s", season, episode, title)
+                    continue
+                file_id = f.get("id")
+            else:
+                # Movie (or single-file torrent): pick the main video file
+                main = _pick_main_movie_file(files)
+                file_id = (main or files[0]).get("id")
+
+            cdn_url = _get_stream_url(torrent_id, file_id)
+            if not cdn_url:
+                continue
             _catbox.cache_url(token, cdn_url)
-            log.info("Preload: %s CDN URL cached", title)
             _preload_spore(cdn_url, token)
+            cached_count += 1
+
+        log.info("Preload: %s CDN URLs cached (%d/%d tokens)", title, cached_count, len(all_items))
     except Exception as exc:
         log.debug("Preload: CDN cache skipped for %s: %s", title, exc)
 
@@ -368,6 +559,10 @@ _SAFE_AUDIO_CODECS = frozenset({
     "pcm_s16le", "pcm_s24le", "pcm_s32le",
 })
 
+
+# ── Plex Spore: audio-voorkeur helpers ────────────────────────────────────────
+# Selectie van veilig decodeerbaar audiotrack en .minfo sidecar beheer.
+# Raakt ALLEEN Plex .minfo bestanden; geen Jellyfin .strm bestanden.
 
 def _preferred_audio_index(audio_streams: list[dict]) -> int:
     """Return 0-based audio stream index to prefer for FFmpeg -map 0:a:N.
@@ -412,25 +607,30 @@ def update_minfo_preferred_audio(token: str, audio_index: int) -> None:
         log.warning("Spore: could not update .minfo for token=%s: %s", token, exc)
 
 
-def _preload_spore(cdn_url: str, token: str) -> None:
-    """Build fast-start cache and probe tracks for a newly preloaded torrent.
-    Runs in the preload thread so first Plex play is instant."""
+def _preload_spore(cdn_url: str, token: str, build_fsh: bool = True) -> None:
+    """Probe CDN tracks and optionally build fast-start cache for a Plex stub.
+
+    build_fsh=True  -- full preload path: build .fsh cache + ffprobe (used on first play / preload)
+    build_fsh=False -- lightweight probe only: ffprobe without downloading 32MB (used for bulk backfill)
+    """
     if not settings.get("SPORE_ENABLED", cfg.SPORE_ENABLED):
         return
     try:
-        import mp4_faststart, json as _json, subprocess as _sp
+        import json as _json, subprocess as _sp
         # Skip probe if already done (preferred_audio detection included)
         existing = db.load_spore_tracks(token)
         if existing and "preferred_audio_idx" in existing:
             return
 
-        ok = mp4_faststart.build_and_cache(cdn_url, token)
-        if not ok:
-            return
-
-        # Extract CodecPrivate from the cached .fsh moov (no -show_data needed)
-        cp = mp4_faststart.extract_codec_private(token)
-        v_extra_hex = cp.hex() if cp else ""
+        v_extra_hex = ""
+        if build_fsh:
+            import mp4_faststart
+            ok = mp4_faststart.build_and_cache(cdn_url, token)
+            if not ok:
+                return
+            # Extract CodecPrivate from the cached .fsh moov (no -show_data needed)
+            cp = mp4_faststart.extract_codec_private(token)
+            v_extra_hex = cp.hex() if cp else ""
 
         res = _sp.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
@@ -455,8 +655,8 @@ def _preload_spore(cdn_url: str, token: str) -> None:
             update_minfo_preferred_audio(token, preferred_idx)
             log.info("Preload: preferred_audio=%d for token=%s (TrueHD -> fallback)",
                      preferred_idx, token)
-        log.info("Preload: spore probe done token=%s dur=%.0fs subs=%d extradata=%d",
-                 token, dur, len(subs), len(cp or b''))
+        log.info("Preload: spore probe done token=%s dur=%.0fs subs=%d fsh=%s",
+                 token, dur, len(subs), build_fsh)
     except Exception as exc:
         log.debug("Preload: spore probe failed token=%s: %s", token, exc)
 
@@ -502,6 +702,14 @@ def _preload_torrent(info_hash: str, magnet: str, title: str) -> None:
             with _preload_lock:
                 _preload_in_flight.discard(info_hash)
 
+
+# =============================================================================
+# CATBOX / LAZY STRM  --  RAAKT BEIDE SYSTEMEN
+# create_lazy_*_strm schrijft zowel Jellyfin .strm als Plex .minfo + stub MKV.
+# Wijzigingen hier kunnen ZOWEL Jellyfin als Plex breken. Na aanpassing:
+#   - test Jellyfin: controleer of .strm aangemaakt wordt in MEDIA_PATH
+#   - test Plex: controleer of .mkv + .minfo aangemaakt worden in SPORE_MEDIA_PATH
+# =============================================================================
 
 def create_lazy_movie_strm(info_hash: str, magnet: str, title: str,
                             year: int | None, imdb_id: str | None = None,
@@ -553,7 +761,7 @@ def create_lazy_movie_strm(info_hash: str, magnet: str, title: str,
     if written:
         _write_spore_stubs(path, token, folder, quality, size_gb)
         if imdb_id or tmdb_id:
-            _write_nfo(path, imdb_id, tmdb_id)
+            _write_nfo(path, imdb_id, tmdb_id, quality=quality)
         if imdb_id:
             try:
                 import nfo_generator
@@ -618,12 +826,14 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
             tvshow_nfo = series_root / "tvshow.nfo"
             if not tvshow_nfo.exists():
                 _write_nfo(path, imdb_id, nfo_path=tvshow_nfo, media_type="series")
+            # Per-episode NFO with codec info so Plex can make playback decisions
+            _write_nfo(path, imdb_id, media_type="episode", quality=quality)
             try:
                 import nfo_generator
                 nfo_generator.fetch_images_for_folder(series_root, imdb_id, "tv")
             except Exception as exc:
                 log.debug("Image fetch skipped for %s: %s", safe_title, exc)
-        if preload_first and settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
+        if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,
                 args=(info_hash, magnet, ep_name),
@@ -640,7 +850,11 @@ def _norm_title(s: str) -> str:
     return re.sub(r'[^a-z0-9]', '', s.lower())  # alphanumeric only
 
 
-# ── Mycelium Spore: stub MKV generation ─────────────────────────────────────
+# =============================================================================
+# PLEX SPORE: stub MKV generatie
+# Alleen Plex-gerelateerde code. Jellyfin .strm bestanden worden hier NIET
+# aangeraakt. EBML bytes, .mkv stubs, .minfo sidecars, stub-update na probe.
+# =============================================================================
 
 def _ebml_vint(n: int) -> bytes:
     """Encode n as EBML variable-length integer (used for element sizes)."""
@@ -751,7 +965,7 @@ def make_stub_mkv(title: str, quality: str | None = None,
 
     audio_tracks: list of dicts with keys codec, language, channels, sample_rate.
     subtitle_tracks: list of dicts with keys codec, language.
-    When audio_tracks is None, a single TrueHD placeholder is used so Plex
+    When audio_tracks is None, a PCM 16ch placeholder is used so Plex
     always invokes the transcoder (never direct-plays the stub).
     """
     width, height = 1920, 1080
@@ -765,6 +979,11 @@ def make_stub_mkv(title: str, quality: str | None = None,
             width, height = 854, 480
 
     if codec_id is None:
+        # Use quality-based codec so Direct Stream clients (Linux HTPC etc.) get
+        # the matching codec from the CDN, preventing Plex from killing the session
+        # for a video codec mismatch. VP8 caused such a mismatch: Plex negotiated
+        # VP8 Direct Stream with the Linux client, but the CDN has HEVC/H264, so
+        # Plex killed immediately.
         codec_id = _codec_id_for_quality(quality)
 
     # EBML header
@@ -790,10 +1009,11 @@ def make_stub_mkv(title: str, quality: str | None = None,
     info_el = _ebml_el(b'\x15\x49\xA9\x66', info_data)
 
     # Video track
-    # For 4K content, declare HDR10 Colour metadata so Plex applies tone-mapping
-    # for clients that don't support HDR10, instead of sending raw PQ frames that
-    # display as black on SDR screens.
-    is_4k = (width >= 3840)
+    # For 4K HEVC stubs with real codec private, declare HDR10 Colour metadata so
+    # Plex can apply tone-mapping for SDR clients. Skipped for VP8 placeholder
+    # stubs (HDR10 in a VP8 track is meaningless; the wrapper forces video copy so
+    # the actual CDN HDR10 signal passes through untouched regardless).
+    is_4k = (width >= 3840) and codec_id.startswith("V_MPEGH/ISO/HEVC")  # HDR10 only for HEVC 4K
     if is_4k:
         # MKV Colour element with BT.2020 + SMPTE ST 2084 PQ (HDR10)
         colour_data = (
@@ -843,16 +1063,15 @@ def make_stub_mkv(title: str, quality: str | None = None,
             )
             next_num += 1
     else:
-        # PCM 2ch placeholder: PCM stereo is not listed in the Shield TV XML
-        # profile's DirectPlayProfile audio codecs, so Plex always invokes the
-        # external transcoder (never direct-plays the stub). Using 2ch instead
-        # of the previous 16ch avoids the Shield TV client augmentation limit of
-        # audio.channels <= 8, which caused "Direct Streaming is disabled" and
-        # forced unnecessary video re-encoding. With 2ch the channels check
-        # passes and Plex can copy the video stream while transcoding audio.
+        # EAC3 5.1 placeholder.
+        #   - A_EAC3 6ch: Plex chooses Direct Stream audio (copy output) for
+        #     clients that support EAC3 passthrough (Shield TV + AV receiver via
+        #     eARC). No EAE needed. Audio packets copied from CDN.
+        #   - For clients that transcode (MiTV -> AC3), EAE decodes EAC3 via
+        #     eac3_eae IPC. The wrapper keeps -eae_prefix for transcode sessions.
         tracks_data += _ebml_audio_track_entry(
-            track_num=2, codec_mkv="A_PCM/INT/LIT", lang="und",
-            channels=2, sample_rate=48000.0, is_default=True,
+            track_num=2, codec_mkv="A_EAC3", lang="und",
+            channels=6, sample_rate=48000.0, is_default=True,
         )
         next_num = 3
 
@@ -894,6 +1113,13 @@ def _spore_stub_dir(strm_path: Path) -> Path:
         rel = strm_path.parent.relative_to(media_root)
         return spore_root / rel
     except ValueError:
+        # strm_path is not under MEDIA_PATH (relative path or different prefix).
+        # Try to preserve the movies/ or series/ subdir from the path components.
+        parts = strm_path.parts
+        for anchor in ("movies", "series"):
+            if anchor in parts:
+                idx = parts.index(anchor)
+                return spore_root / Path(*parts[idx:-1])
         return spore_root / strm_path.parent.name
 
 
@@ -923,12 +1149,34 @@ def _write_spore_stubs(strm_path: Path, token: str,
         return
 
     # Write stub .mkv
+    # Try to get a real duration from TMDB so Plex shows the correct runtime
+    # without needing to probe the CDN file first. Audio/subtitle tracks are
+    # still placeholder (EAC3 6ch) until the first Jellyfin play triggers
+    # catbox materialization and CDN probe -- that's correct catbox behaviour.
     if not mkv_path.exists():
         try:
-            stub = make_stub_mkv(title, quality)
+            duration_sec = 7200.0
+            try:
+                vi = db.get_virtual_item(token)
+                imdb_id = vi.get("imdb_id") if vi else None
+                if imdb_id:
+                    import tmdb as _tmdb
+                    season  = vi.get("season")
+                    episode = vi.get("episode")
+                    if season and episode:
+                        dur = _tmdb.get_episode_runtime_sec(imdb_id, season, episode)
+                    else:
+                        dur = _tmdb.get_movie_runtime_sec(imdb_id)
+                    if dur and dur > 60:
+                        duration_sec = dur
+                        log.debug("Spore: TMDB duration %.0fs for %s", duration_sec, title)
+            except Exception as _e:
+                log.debug("Spore: TMDB duration lookup failed for %s: %s", title, _e)
+
+            stub = make_stub_mkv(title, quality, duration_sec=duration_sec)
             mkv_path.write_bytes(stub)
-            log.debug("Spore: wrote stub MKV %s (%d bytes, codec=%s)",
-                      mkv_path.name, len(stub), _codec_id_for_quality(quality))
+            log.debug("Spore: wrote stub MKV %s (%d bytes, quality=%s dur=%.0fs)",
+                      mkv_path.name, len(stub), quality or "?", duration_sec)
         except Exception as exc:
             log.warning("Spore: could not write stub MKV %s: %s", mkv_path, exc)
             return
@@ -1053,13 +1301,11 @@ def regenerate_spore_stubs(token: str | None = None) -> dict:
                 duration_sec=dur,
                 audio_tracks=None,
                 subtitle_tracks=sub_tracks,
-                video_codec_private=v_extra,
             )
+            stub_dir.mkdir(parents=True, exist_ok=True)
             mkv_path.write_bytes(stub)
-            codec = _codec_id_for_quality(item.get("quality"))
-            log.info("Spore: regenerated stub %s (codec=%s subs=%d extradata=%d)",
-                     mkv_path.name, codec,
-                     len(sub_tracks or []), len(v_extra or b''))
+            log.info("Spore: regenerated stub %s (quality=%s subs=%d)",
+                     mkv_path.name, item.get("quality") or "?", len(sub_tracks or []))
             regenerated += 1
         except Exception as exc:
             log.warning("Spore regenerate: failed for %s: %s", strm_path.name, exc)
@@ -1068,6 +1314,101 @@ def regenerate_spore_stubs(token: str | None = None) -> dict:
     log.info("Spore regenerate: total=%d regenerated=%d skipped=%d errors=%d",
              total, regenerated, skipped, errors)
     return {"total": total, "regenerated": regenerated, "skipped": skipped, "errors": errors}
+
+
+def probe_pending_stubs() -> dict:
+    """Background job: probe CDN files for Plex stubs that have no track info yet.
+
+    Only probes items already present in TorBox library -- no torrents are added.
+    This preserves the catbox lazy principle: TorBox is only touched when a user
+    plays something in Jellyfin (catbox materialization) or CATBOX_PRELOAD runs.
+
+    Duration is set via TMDB at stub creation time (_write_spore_stubs), so no
+    probe is needed just for runtime. This job fills in real audio/sub tracks
+    for items that happen to still be cached in TorBox (e.g. recently played).
+
+    Uses build_fsh=False: just ffprobe, no 32MB download per file.
+    Fast-start cache is built on first actual Plex play.
+    """
+    if not settings.get("SPORE_ENABLED", cfg.SPORE_ENABLED):
+        return {"skipped": "SPORE_ENABLED=false"}
+
+    import catbox as _catbox
+
+    items = db.get_unprobed_spore_items()
+    if not items:
+        log.debug("Probe pending: nothing to do")
+        return {"probed": 0, "skipped": 0, "queued_preload": 0, "errors": 0}
+
+    log.info("Probe pending: %d stubs without track info", len(items))
+
+    # Group by info_hash to avoid duplicate TorBox API lookups
+    by_hash: dict[str, list[dict]] = {}
+    for item in items:
+        h = (item.get("info_hash") or "").lower()
+        if h:
+            by_hash.setdefault(h, []).append(item)
+
+    probed = skipped = errors = 0
+
+    for info_hash, hash_items in by_hash.items():
+        try:
+            ready = torbox_mod.find_by_hash(info_hash)
+            if not ready or not torbox_mod._is_ready(ready):
+                skipped += len(hash_items)
+                continue
+
+            torrent_id = ready.get("id")
+            files = ready.get("files") or []
+            if not files or not torrent_id:
+                fresh = torbox_mod.find_by_hash(info_hash, force_refresh=True)
+                if fresh:
+                    files = fresh.get("files") or []
+                    torrent_id = fresh.get("id") or torrent_id
+            if not files or not torrent_id:
+                skipped += len(hash_items)
+                continue
+
+            for vi in hash_items:
+                token   = vi.get("token")
+                season  = vi.get("season")
+                episode = vi.get("episode")
+                if not token:
+                    skipped += 1
+                    continue
+                if db.load_spore_tracks(token):   # probed in the meantime
+                    skipped += 1
+                    continue
+
+                if season and episode:
+                    f = _pick_episode_file(files, season, episode)
+                    if not f:
+                        log.debug("Probe pending: no file for S%02dE%02d token=%s",
+                                  season, episode, token)
+                        skipped += 1
+                        continue
+                    file_id = f.get("id")
+                else:
+                    main = _pick_main_movie_file(files)
+                    file_id = (main or files[0]).get("id")
+
+                cdn_url = _get_stream_url(torrent_id, file_id)
+                if not cdn_url:
+                    skipped += 1
+                    continue
+
+                _catbox.cache_url(token, cdn_url)
+                _preload_spore(cdn_url, token, build_fsh=False)
+                probed += 1
+                time.sleep(0.3)
+
+        except Exception as exc:
+            log.warning("Probe pending: error for hash %s: %s", info_hash, exc)
+            errors += len(hash_items)
+
+    log.info("Probe pending done: probed=%d skipped=%d errors=%d",
+             probed, skipped, errors)
+    return {"probed": probed, "skipped": skipped, "errors": errors}
 
 
 def update_stub_from_probe(token: str, audio_streams: list[dict],
@@ -1091,19 +1432,20 @@ def update_stub_from_probe(token: str, audio_streams: list[dict],
     if not mkv_path.parent.exists():
         return False
 
-    # Include real CodecPrivate (avcC/hvcC) from the fast-start cache.
-    # This lets Plex know the exact video profile/level and choose video-copy
-    # instead of re-encoding (saves significant CPU per session).
-    # Direct Play is NOT possible because the stub uses a PCM 16ch audio
-    # placeholder that no device can pass through HDMI -- the transcoder is
-    # always invoked, so the wrapper always runs.
-    import mp4_faststart as _mp4fs
-    v_cp = _mp4fs.extract_codec_private(token)
+    # Write real audio tracks so Plex shows the correct languages and the user
+    # can switch between e.g. Dutch / English / Italian in the Plex UI.
+    # Stream order matches the CDN file order, so Plex's -map 0:N references
+    # are correctly forwarded to the CDN file by the transcoder wrapper.
+    audio_tracks = [
+        {
+            "codec":       (s.get("codec_name") or "eac3").lower(),
+            "language":    (s.get("tags") or {}).get("language", "und")[:3],
+            "channels":    s.get("channels") or 2,
+            "sample_rate": int(s.get("sample_rate") or 48000),
+        }
+        for s in audio_streams
+    ] or None
 
-    # Keep audio_tracks=None so make_stub_mkv uses the PCM 16ch placeholder.
-    # PCM 16ch forces Plex to invoke the external transcoder (our wrapper
-    # rewrites -i stub.mkv -> spore-stream URL). Real audio tracks would allow
-    # Direct Play on Shield/Android, bypassing the wrapper entirely.
     subtitle_tracks = [
         {
             "codec":    s.get("codec_name", "subrip"),
@@ -1133,20 +1475,34 @@ def update_stub_from_probe(token: str, audio_streams: list[dict],
             item.get("title") or strm_path.stem,
             item.get("quality"),
             duration_sec=duration_s or 7200.0,
-            audio_tracks=None,
+            audio_tracks=audio_tracks,
             subtitle_tracks=subtitle_tracks or None,
-            video_codec_private=v_cp,
+            # video_codec_private omitted: updated via update_stub_from_probe
         )
         mkv_path.write_bytes(stub)
         log.info(
             "Spore: updated stub for token=%s with %d audio + %d subs",
             token, len(audio_streams), len(subtitle_tracks),
         )
+        # Also update the NFO sidecar so Plex sees the real codec / language info
+        # This applies to both stub MKV library and .strm library
+        try:
+            quality = item.get("quality")
+            update_nfo_streamdetails(strm_path, quality,
+                                     audio_tracks or [], subtitle_tracks or [])
+        except Exception as _nfo_exc:
+            log.debug("Spore: NFO update failed for token=%s: %s", token, _nfo_exc)
         return True
     except Exception as exc:
         log.warning("Spore: stub update failed for token=%s: %s", token, exc)
         return False
 
+
+# =============================================================================
+# JELLYFIN .strm  --  batch write / repair / cleanup
+# Alles hieronder schrijft of herstelt Jellyfin .strm bestanden.
+# Plex Spore stubs (.mkv / .minfo) worden hier NIET aangeraakt.
+# =============================================================================
 
 def _write_strm(path: Path, url: str) -> bool:
     """Write .strm file only if it doesn't exist. Returns True if a new file was written."""

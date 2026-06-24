@@ -896,6 +896,24 @@ def get_virtual_item_by_hash(info_hash: str) -> dict | None:
         return dict(row) if row else None
 
 
+def get_virtual_items_by_hash(info_hash: str) -> list[dict]:
+    """Return ALL virtual_items with this info_hash (movies: 1, season packs: N episodes)."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM virtual_items WHERE info_hash=?", (info_hash.lower(),)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_unprobed_spore_items() -> list[dict]:
+    """Return virtual_items that have a strm_path but no spore_tracks yet."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM virtual_items WHERE strm_path IS NOT NULL AND spore_tracks IS NULL"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_all_virtual_items() -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(

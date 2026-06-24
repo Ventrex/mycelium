@@ -94,6 +94,42 @@ def get_images(imdb_id: str, media_type: str = "movie") -> tuple[str | None, str
     return item.get("poster_path"), item.get("backdrop_path")
 
 
+def get_movie_runtime_sec(imdb_id: str) -> float | None:
+    """Return movie runtime in seconds from TMDB, or None if unavailable."""
+    data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+    if not data:
+        return None
+    results = data.get("movie_results") or []
+    if not results:
+        return None
+    tmdb_id = results[0].get("id")
+    if not tmdb_id:
+        return None
+    detail = _get(f"/movie/{tmdb_id}")
+    if not detail:
+        return None
+    minutes = detail.get("runtime")
+    return float(minutes) * 60.0 if minutes else None
+
+
+def get_episode_runtime_sec(imdb_id: str, season: int, episode: int) -> float | None:
+    """Return episode runtime in seconds from TMDB, or None if unavailable."""
+    data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+    if not data:
+        return None
+    results = data.get("tv_results") or []
+    if not results:
+        return None
+    tmdb_id = results[0].get("id")
+    if not tmdb_id:
+        return None
+    ep_data = _get(f"/tv/{tmdb_id}/season/{season}/episode/{episode}")
+    if not ep_data:
+        return None
+    minutes = ep_data.get("runtime")
+    return float(minutes) * 60.0 if minutes else None
+
+
 def get_episode_still(tmdb_id: int, season: int, episode: int) -> str | None:
     """Return still_path for a TV episode, or None."""
     data = _get(f"/tv/{tmdb_id}/season/{season}/episode/{episode}")

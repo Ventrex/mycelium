@@ -294,6 +294,26 @@ def _start_scheduler() -> BackgroundScheduler:
         )
         log.info("Scheduled retry queue every %dm", RETRY_QUEUE_INTERVAL_MINUTES)
 
+    # Probe CDN files for Plex stubs that have no track info yet (duration, audio, subs).
+    # Runs every 30 min in a background thread to avoid blocking the scheduler.
+    # build_fsh=False: only ffprobe, no 32MB download per file.
+    if cfg.SPORE_ENABLED:
+        def _run_probe_pending():
+            import threading as _t
+            _t.Thread(
+                target=strm_generator.probe_pending_stubs,
+                daemon=True,
+                name="probe-pending-stubs",
+            ).start()
+
+        scheduler.add_job(
+            _run_probe_pending,
+            trigger="interval", minutes=30,
+            id="probe_pending_stubs",
+            next_run_time=None,
+        )
+        log.info("Scheduled probe_pending_stubs every 30m")
+
     if not LITE_MODE:
         if AUTO_UPGRADE_ENABLED and AUTO_UPGRADE_INTERVAL_HOURS > 0:
             scheduler.add_job(
@@ -409,11 +429,12 @@ if cfg.SPORE_ENABLED:
     except Exception as _spore_exc:
         log.warning("Mycelium Spore server failed to start: %s", _spore_exc)
 
-# Fast-start cache lives next to plex-media stubs for easy cleanup
+# Fast-start cache in dedicated subdir so media root stays clean
+_fsh_cache_dir = cfg.SPORE_MEDIA_PATH + "/.fsh"
 try:
     import mp4_faststart
-    mp4_faststart.init(cfg.SPORE_MEDIA_PATH)
-    log.info("MP4 fast-start cache dir: %s", cfg.SPORE_MEDIA_PATH)
+    mp4_faststart.init(_fsh_cache_dir)
+    log.info("MP4 fast-start cache dir: %s", _fsh_cache_dir)
 except Exception as _fsh_exc:
     log.warning("MP4 fast-start init failed: %s", _fsh_exc)
 
@@ -2616,6 +2637,42 @@ def ui_api_jellyfin_items():
             log.debug("Jellyfin batch lookup failed: %s", exc)
     return jsonify(jellyfin_url=jurl or None,
                    items={iid: _jellyfin_item_cache.get(iid) for iid in want})
+
+
+@app.get("/ui/api/spore-minfo/<token>")
+def spore_minfo_api(token: str):
+    """Return .minfo sidecar data for a token as plain text key=value pairs.
+
+    Used by the Plex transcoder wrapper when playing .strm files (no .minfo
+    file path is known from the URL alone, so the wrapper fetches it here).
+    No auth required: only token=hex is returned, no secrets.
+    """
+    item = db.get_virtual_item(token)
+    if not item or not item.get("strm_path"):
+        return f"token={token}\n", 404, {"Content-Type": "text/plain"}
+    from pathlib import Path as _Path
+    strm_path = _Path(item["strm_path"])
+    minfo_path = strm_generator._spore_stub_dir(strm_path) / (strm_path.stem + ".minfo")
+    if minfo_path.exists():
+        try:
+            return minfo_path.read_text(encoding="utf-8"), 200, {"Content-Type": "text/plain"}
+        except Exception:
+            pass
+    return f"token={token}\n", 200, {"Content-Type": "text/plain"}
+
+
+@app.post("/ui/api/backfill-nfo")
+@auth.require_auth
+def ui_api_backfill_nfo():
+    """Add/update <fileinfo><streamdetails> in all existing NFO files.
+
+    For items with probed audio tracks: uses real codec/language data.
+    For unprobed items: uses quality-based defaults (hevc/h264, EAC3 6ch).
+    Safe to run multiple times. Triggers a Plex library refresh afterward if
+    PLEX_URL and PLEX_TOKEN are configured.
+    """
+    result = strm_generator.backfill_nfo_streamdetails()
+    return jsonify(result)
 
 
 @app.get("/ui/api/tmdb/find")
