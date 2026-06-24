@@ -20,6 +20,7 @@ import db
 import discover_prefs
 import health
 import jellyfin
+import language_prefs
 import library_sync
 import log_buffer
 import monitor
@@ -1742,22 +1743,23 @@ def ui_api_discover_search():
     if not q:
         return jsonify(results=[])
     page = int(request.args.get("page") or "1")
-    results = _filter_blacklisted(tmdb.multi_search(q, page=page))
+    results = _filter_discover_results(tmdb.multi_search(q, page=page))
     _enrich_library_status(results)
     return jsonify(results=results)
 
 
-def _filter_blacklisted(items: list[dict]) -> list[dict]:
-    """Drop movies/shows/people the user has blacklisted, so they stop showing
-    up in discover, search and recommendations."""
+def _filter_discover_results(items: list[dict]) -> list[dict]:
+    """Drop movies/shows/people the user has blacklisted, and items whose
+    original_language doesn't match the allowed/excluded language prefs, so
+    they stop showing up in discover, search and recommendations."""
     bl = {
         "movie": db.get_content_blacklist_ids("movie"),
         "tv": db.get_content_blacklist_ids("tv"),
         "person": db.get_content_blacklist_ids("person"),
     }
-    if not any(bl.values()):
-        return items
-    return [it for it in items if it.get("tmdb_id") not in bl.get(it.get("media_type"), set())]
+    if any(bl.values()):
+        items = [it for it in items if it.get("tmdb_id") not in bl.get(it.get("media_type"), set())]
+    return language_prefs.filter_items(items)
 
 
 _STATUS_PRIORITY = {"success": 0, "available": 0, "wanted": 1, "pending": 2, "upcoming": 3, "failed": 4}
@@ -1832,7 +1834,7 @@ def ui_api_discover_trending():
     media = request.args.get("type", "all")  # all | movie | tv
     window = request.args.get("window", "week")  # day | week
     page = int(request.args.get("page") or "1")
-    results = _filter_blacklisted(tmdb.trending(media, window, page=page))
+    results = _filter_discover_results(tmdb.trending(media, window, page=page))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1842,7 +1844,7 @@ def ui_api_discover_popular():
     media = request.args.get("type", "movie")
     page = int(request.args.get("page") or "1")
     region = _user_region()
-    results = _filter_blacklisted(tmdb.popular(media, page=page, region=region))
+    results = _filter_discover_results(tmdb.popular(media, page=page, region=region))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1851,7 +1853,7 @@ def ui_api_discover_popular():
 def ui_api_discover_top_rated():
     media = request.args.get("type", "movie")
     page = int(request.args.get("page") or "1")
-    results = _filter_blacklisted(tmdb.top_rated(media, page=page))
+    results = _filter_discover_results(tmdb.top_rated(media, page=page))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1860,7 +1862,7 @@ def ui_api_discover_top_rated():
 def ui_api_discover_now_playing():
     page = int(request.args.get("page") or "1")
     region = _user_region()
-    results = _filter_blacklisted(tmdb.now_playing(page=page, region=region))
+    results = _filter_discover_results(tmdb.now_playing(page=page, region=region))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1869,7 +1871,7 @@ def ui_api_discover_now_playing():
 def ui_api_discover_upcoming():
     page = int(request.args.get("page") or "1")
     region = _user_region()
-    results = _filter_blacklisted(tmdb.upcoming(page=page, region=region))
+    results = _filter_discover_results(tmdb.upcoming(page=page, region=region))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1877,7 +1879,7 @@ def ui_api_discover_upcoming():
 @app.get("/ui/api/discover/on-the-air")
 def ui_api_discover_on_the_air():
     page = int(request.args.get("page") or "1")
-    results = _filter_blacklisted(tmdb.on_the_air(page=page))
+    results = _filter_discover_results(tmdb.on_the_air(page=page))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1897,7 +1899,7 @@ def ui_api_discover_by_provider():
     sort = request.args.get("sort_by", "popularity.desc")
     if not pid:
         return jsonify(error="provider_id required"), 400
-    results = _filter_blacklisted(tmdb.discover_by_provider(media, pid, region=region, sort_by=sort))
+    results = _filter_discover_results(tmdb.discover_by_provider(media, pid, region=region, sort_by=sort))
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1925,7 +1927,7 @@ def ui_api_discover_details():
             if row:
                 detail["library_status"] = row["status"]
     detail["is_blacklisted"] = tmdb_id in db.get_content_blacklist_ids(media)
-    detail["recommendations"] = _filter_blacklisted(detail.get("recommendations") or [])
+    detail["recommendations"] = _filter_discover_results(detail.get("recommendations") or [])
     return jsonify(detail)
 
 
@@ -1946,7 +1948,7 @@ def ui_api_discover_by_genre():
     page = int(request.args.get("page") or "1")
     region = _user_region()
     year_from, year_to = discover_prefs.effective_year_range(media, genre_id)
-    results = _filter_blacklisted(
+    results = _filter_discover_results(
         tmdb.discover_by_genre(media, genre_id, year_from, year_to, page=page, region=region))
     _enrich_library_status(results)
     return jsonify(results=results, year_from=year_from, year_to=year_to)
@@ -1972,7 +1974,7 @@ def ui_api_discover_holiday():
     movies = tmdb.discover_by_keyword("movie", keyword_id, page=page, region=region)
     shows = tmdb.discover_by_keyword("tv", keyword_id, page=page, region=region)
     results = sorted(movies + shows, key=lambda x: x.get("popularity") or 0, reverse=True)
-    results = _filter_blacklisted(results)
+    results = _filter_discover_results(results)
     _enrich_library_status(results)
     return jsonify(results=results)
 
@@ -1983,7 +1985,7 @@ def ui_api_discover_search_person():
     if not q:
         return jsonify(results=[])
     page = int(request.args.get("page") or "1")
-    return jsonify(results=_filter_blacklisted(tmdb.search_person(q, page=page)))
+    return jsonify(results=_filter_discover_results(tmdb.search_person(q, page=page)))
 
 
 @app.get("/ui/api/discover/person")
@@ -1994,7 +1996,7 @@ def ui_api_discover_person():
     detail = tmdb.person_details(person_id)
     if not detail:
         return jsonify(error="not found"), 404
-    detail["filmography"] = _filter_blacklisted(detail["filmography"])
+    detail["filmography"] = _filter_discover_results(detail["filmography"])
     _enrich_library_status(detail["filmography"])
     detail["is_blacklisted"] = person_id in db.get_content_blacklist_ids("person")
     detail["is_favorite"] = person_id in db.get_favorite_actor_ids()
@@ -2009,7 +2011,7 @@ def ui_api_discover_collection():
     detail = tmdb.collection_details(collection_id)
     if not detail:
         return jsonify(error="not found"), 404
-    detail["parts"] = _filter_blacklisted(detail["parts"])
+    detail["parts"] = _filter_discover_results(detail["parts"])
     _enrich_library_status(detail["parts"])
     return jsonify(detail)
 
@@ -2027,6 +2029,25 @@ def ui_api_discover_prefs_set():
     payload = request.get_json(silent=True) or {}
     media = payload.get("media_type", "movie")
     discover_prefs.set_prefs(media, payload.get("prefs") or {})
+    return jsonify(status="saved")
+
+
+@app.get("/ui/api/discover/languages")
+def ui_api_discover_languages():
+    return jsonify(languages=tmdb.languages())
+
+
+@app.get("/ui/api/discover/language-prefs")
+def ui_api_discover_language_prefs_get():
+    return jsonify(language_prefs.get_prefs())
+
+
+@app.post("/ui/api/discover/language-prefs")
+def ui_api_discover_language_prefs_set():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    payload = request.get_json(silent=True) or {}
+    language_prefs.set_prefs(payload.get("prefs") or {})
     return jsonify(status="saved")
 
 

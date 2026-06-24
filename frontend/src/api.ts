@@ -10,6 +10,8 @@ import type {
   WantedMovie,
   WantedEpisode,
   Genre,
+  Language,
+  LanguagePrefs,
   DiscoverPrefs,
   AutoApproveRules,
   TmdbPerson,
@@ -116,6 +118,13 @@ export const api = {
     http<{ status: string }>('/ui/api/discover-prefs', {
       method: 'POST',
       body: JSON.stringify({ media_type: type, prefs }),
+    }),
+  languages: () => http<{ languages: Language[] }>('/ui/api/discover/languages'),
+  languagePrefsGet: () => http<LanguagePrefs>('/ui/api/discover/language-prefs'),
+  languagePrefsSet: (prefs: LanguagePrefs) =>
+    http<{ status: string }>('/ui/api/discover/language-prefs', {
+      method: 'POST',
+      body: JSON.stringify({ prefs }),
     }),
 
   // Person search / detail
