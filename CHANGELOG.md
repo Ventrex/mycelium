@@ -2,6 +2,17 @@
 
 All notable changes to Mycelium are documented in this file.
 
+## [0.5.5] - 2026-06-24
+
+### Added
+
+- **Content-language filter for Discover/Search**: allow/exclude titles by their TMDB original language, so e.g. Hindi-language (Bollywood) films can be hidden entirely. New language picker in the Movies/Shows and Search views. Separate from the existing audio-language release preference.
+- **Blacklist teardown**: blacklisting a movie or show now removes that single title everywhere instead of only hiding it: its torrent is deleted from TorBox, its `.strm` files are removed, and the matching item is deleted from Jellyfin (matched on TMDB/IMDb provider id). Runs in the background; the TorBox account and Jellyfin server themselves are untouched.
+- **Daily auto-approve with a cap**: the auto-approve scan now runs once per day at a configurable hour (`AUTO_APPROVE_DAILY_HOUR`) with a global per-run limit (`AUTO_APPROVE_DAILY_LIMIT`, default 100) so a single day cannot flood TorBox. Already-requested movies and monitored series are skipped, so nothing is queued twice.
+- **Clickable cast**: actors in the detail view open a person page with their filmography, requestable directly.
+- **Series library as posters**: the Library shows series as posters with browsable seasons and episodes; cached episodes are playable inline.
+- **Search instant-play**: request and play a title directly from search, Netflix-style.
+
 ## [0.5.2] - 2026-06-12
 
 ### Added
