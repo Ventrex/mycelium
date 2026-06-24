@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
-import { usePluginSlot } from '../hooks/usePluginSlots';
 import PosterCard from '../components/PosterCard';
 import DetailModal from '../components/DetailModal';
 import type { TmdbItem } from '../types';
@@ -241,18 +240,12 @@ function LibraryPosterCard({ movie, onClick }: { movie: any; onClick: () => void
 }
 
 function SeriesPanel() {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const { data, isLoading } = useQuery({
     queryKey: ['library-series-episodes'],
     queryFn: () => fetch('/ui/api/library/series-episodes').then(r => r.json()),
   });
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session });
-  const canPlay = !!(session?.user as any)?.webplayer_enabled;
   const traktConnected = !!(session?.user as any)?.trakt_connected;
-  const PlayerModal = usePluginSlot('episode-player');
-  const [playEp, setPlayEp] = useState<{
-    imdb_id: string; season: number; episode: number; title: string
-  } | null>(null);
 
   // Per-episode watched data: only fetch when trakt is connected
   const { data: watchedEpsData } = useQuery({
@@ -262,139 +255,119 @@ function SeriesPanel() {
     staleTime: 5 * 60 * 1000,
   });
   // watchedEps: { imdb_id: { "1": [1,2,3], "2": [1] } }
-  const watchedEps = useMemo(
-    () => watchedEpsData?.shows ?? {},
-    [watchedEpsData],
-  );
+  const watchedEps = useMemo(() => watchedEpsData?.shows ?? {}, [watchedEpsData]);
+
+  const [search, setSearch] = useState('');
+  const [modal, setModal] = useState<{
+    tmdb_id: number;
+    media_type: string;
+    title: string;
+    seriesEpisodes: { imdb_id?: string | null; seasons: any[]; missing: any[] } | null;
+    watched: Record<string, number[]> | null;
+  } | null>(null);
+
+  const series: any[] = useMemo(() => data?.series || [], [data]);
+  const filtered = useMemo(() => {
+    if (!search.trim()) return series;
+    const q = search.trim().toLowerCase();
+    return series.filter((s: any) => (s.title || '').toLowerCase().includes(q));
+  }, [series, search]);
+
+  // Resolve tmdb_id on click (series-episodes has no tmdb_id) and open the
+  // shared detail modal with the library's per-episode availability.
+  const openSeries = useCallback(async (s: any) => {
+    if (!s.imdb_id) return;
+    try {
+      const found = await api.tmdbFind(s.imdb_id);
+      if (found.tmdb_id) {
+        setModal({
+          tmdb_id: found.tmdb_id,
+          media_type: 'tv',
+          title: s.title,
+          seriesEpisodes: { imdb_id: s.imdb_id, seasons: s.seasons, missing: s.missing || [] },
+          watched: watchedEps[s.imdb_id] ?? null,
+        });
+      }
+    } catch { /* ignore */ }
+  }, [watchedEps]);
 
   if (isLoading) return <div className="text-muted">Loading...</div>;
-  const series: any[] = data?.series || [];
-
-  const toggle = (title: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      next.has(title) ? next.delete(title) : next.add(title);
-      return next;
-    });
-  };
 
   return (
     <>
-    <div>
-      <p className="text-muted text-sm mb-4">{series.length} series in library</p>
-      <div className="space-y-1">
-        {series.map((s: any) => {
-          const isOpen = expanded.has(s.title);
-          const totalEps = s.seasons.reduce((n: number, se: any) => n + se.episodes.length, 0);
-          const missingList: {season: number; episode: number}[] = s.missing || [];
-          const missingCount = missingList.length;
-          const missingSet = new Set(missingList.map((m: any) => `${m.season}-${m.episode}`));
-          const showWatched = watchedEps[s.imdb_id] ?? {};
-          return (
-            <div key={s.title} className="border border-border rounded">
-              <button
-                type="button"
-                onClick={() => toggle(s.title)}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-card transition text-left"
-              >
-                <span className="font-medium">{s.title}</span>
-                <span className="text-muted text-xs">
-                  {s.seasons.length} season{s.seasons.length !== 1 ? 's' : ''} · {totalEps} episodes
-                  {missingCount > 0 && (
-                    <span className="text-red-400 ml-2">{missingCount} missing</span>
-                  )}
-                  <span className="ml-2">{isOpen ? '▲' : '▼'}</span>
-                </span>
-              </button>
-              {isOpen && (
-                <div className="border-t border-border px-4 py-3 space-y-2 bg-card/50">
-                  {s.seasons.map((se: any) => {
-                    const seasonMissing = missingList
-                      .filter((m: any) => m.season === se.season)
-                      .map((m: any) => m.episode);
-                    const allEps = new Set([...se.episodes, ...seasonMissing]);
-                    const sorted = Array.from(allEps).sort((a, b) => a - b);
-                    const watchedInSeason = new Set<number>(showWatched[String(se.season)] ?? []);
-                    return (
-                      <div key={se.season}>
-                        <div className="text-xs text-muted mb-1">
-                          Season {String(se.season).padStart(2, '0')}{se.year ? ` (${se.year})` : ''} - {se.episodes.length} episode{se.episodes.length !== 1 ? 's' : ''}
-                          {seasonMissing.length > 0 && (
-                            <span className="text-red-400 ml-1">({seasonMissing.length} missing)</span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {sorted.map((ep: number) => {
-                            const isWanted  = missingSet.has(`${se.season}-${ep}`);
-                            const isWatched = watchedInSeason.has(ep);
-                            const playable  = !isWanted && canPlay && s.imdb_id;
-                            const label = `E${String(ep).padStart(2, '0')}`;
-
-                            if (isWanted) {
-                              return (
-                                <span key={ep}
-                                  className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400"
-                                  title="Wanted - not yet cached"
-                                >
-                                  {label}
-                                </span>
-                              );
-                            }
-                            if (playable) {
-                              return (
-                                <button
-                                  key={ep}
-                                  type="button"
-                                  onClick={() => setPlayEp({
-                                    imdb_id: s.imdb_id,
-                                    season: se.season,
-                                    episode: ep,
-                                    title: `${s.title} S${String(se.season).padStart(2,'0')}E${String(ep).padStart(2,'0')}`,
-                                  })}
-                                  className={`text-xs px-2 py-0.5 rounded transition-colors
-                                    ${isWatched
-                                      ? 'bg-green-500/20 text-green-400 hover:bg-green-600 hover:text-white'
-                                      : 'bg-accent/20 text-accent hover:bg-indigo-600 hover:text-white'
-                                    }`}
-                                  title={isWatched ? 'Watched - play again' : 'Play in browser'}
-                                >
-                                  ▶ {label}
-                                </button>
-                              );
-                            }
-                            // available but no webplayer
-                            return (
-                              <span key={ep}
-                                className={`text-xs px-2 py-0.5 rounded
-                                  ${isWatched ? 'bg-green-500/20 text-green-400' : 'bg-accent/20 text-accent'}`}
-                                title={isWatched ? 'Watched' : 'Available'}
-                              >
-                                {label}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+        <input
+          type="search"
+          placeholder="Search series..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm
+                     placeholder:text-muted focus:outline-none focus:border-accent"
+        />
+        <span className="text-muted text-sm self-center whitespace-nowrap">{series.length} series</span>
       </div>
-    </div>
 
-    {playEp && PlayerModal && (
-      <PlayerModal
-        imdb_id={playEp.imdb_id}
-        media_type="tv"
-        title={playEp.title}
-        season={playEp.season}
-        episode={playEp.episode}
-        onClose={() => setPlayEp(null)}
-      />
-    )}
+      {filtered.length === 0 ? (
+        <p className="text-muted text-sm py-8 text-center">No series found.</p>
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 200px))' }}>
+          {filtered.map((s: any) => (
+            <SeriesPosterCard key={s.title} series={s} onClick={() => openSeries(s)} />
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <DetailModal
+          tmdbId={modal.tmdb_id}
+          mediaType={modal.media_type as any}
+          seriesEpisodes={modal.seriesEpisodes}
+          watchedEpisodes={modal.watched}
+          onClose={() => setModal(null)}
+          onSelectItem={(item: TmdbItem) => {
+            // Clicking a recommendation/cast title opens a plain detail (no library data)
+            if (item.tmdb_id) {
+              setModal({
+                tmdb_id: item.tmdb_id,
+                media_type: item.media_type,
+                title: item.title,
+                seriesEpisodes: null,
+                watched: null,
+              });
+            }
+          }}
+        />
+      )}
     </>
   );
+}
+
+/** Series poster card: lazy-fetches the TMDB poster by imdb_id (series-episodes carries no poster). */
+function SeriesPosterCard({ series, onClick }: { series: any; onClick: () => void }) {
+  const { data: lazyPoster } = useQuery({
+    queryKey: ['poster', series.imdb_id, 'tv'],
+    queryFn: () => fetch(`/ui/api/poster/${series.imdb_id}?type=tv`).then(r => r.json()),
+    enabled: !!series.imdb_id,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const resolvedPath: string | null = lazyPoster?.poster
+    ? lazyPoster.poster.replace(/^https:\/\/image\.tmdb\.org\/t\/p\/w\d+/, '')
+    : null;
+  const missingCount = (series.missing || []).length;
+  const item: TmdbItem = {
+    tmdb_id:       0,
+    media_type:    'tv',
+    title:         series.title,
+    year:          null,
+    rating:        0,
+    votes:         0,
+    popularity:    0,
+    overview:      '',
+    poster_path:   resolvedPath,
+    backdrop_path: null,
+    imdb_id:       series.imdb_id,
+  } as TmdbItem & { imdb_id?: string };
+
+  return <PosterCard item={item} onClick={() => onClick()} status={missingCount ? 'wanted' : 'success'} />;
 }

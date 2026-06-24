@@ -12,11 +12,22 @@ export default function DetailModal({
   mediaType,
   onClose,
   onSelectItem,
+  seriesEpisodes,
+  watchedEpisodes,
 }: {
   tmdbId: number | null;
   mediaType: MediaType | null;
   onClose: () => void;
   onSelectItem: (item: TmdbItem) => void;
+  // Optional library availability for a series, supplied when opened from the
+  // Library so seasons/episodes become browsable and cached episodes playable.
+  seriesEpisodes?: {
+    imdb_id?: string | null;
+    seasons: { season: number; episodes: number[] }[];
+    missing: { season: number; episode: number }[];
+  } | null;
+  // Optional per-season watched episode numbers (e.g. from Trakt).
+  watchedEpisodes?: Record<string, number[]> | null;
 }) {
   const queryClient = useQueryClient();
   const open = tmdbId !== null && mediaType !== null;
@@ -87,6 +98,8 @@ export default function DetailModal({
   // TV monitoring scope
   const [showTrailer, setShowTrailer] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [browseSeason, setBrowseSeason] = useState<number | null>(null);
+  const [playEp, setPlayEp] = useState<{ season: number; episode: number } | null>(null);
   const [monitorMode, setMonitorMode] = useState<'all' | 'future' | 'selected'>('all');
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>([]);
 
@@ -166,7 +179,7 @@ export default function DetailModal({
 
   // Reset state when modal opens fresh
   useEffect(() => {
-    if (open) { setAddStatus('idle'); setCollectionStatus('idle'); setShowTrailer(false); setShowPlayer(false); }
+    if (open) { setAddStatus('idle'); setCollectionStatus('idle'); setShowTrailer(false); setShowPlayer(false); setBrowseSeason(null); setPlayEp(null); }
   }, [open, tmdbId]);
 
   // Esc to close
@@ -431,22 +444,50 @@ export default function DetailModal({
           {detail?.media_type === 'tv' && detail.seasons && detail.seasons.length > 0 && (
             <Section title="Seasons">
               <div className="flex gap-3 overflow-x-auto scrollbar-hidden">
-                {detail.seasons.map((s) => (
-                  <div key={s.season_number} className="flex-shrink-0 w-24 text-center">
-                    <div className="aspect-[2/3] rounded-md bg-bg overflow-hidden">
-                      {s.poster_path && (
-                        <img
-                          src={tmdbImg.logo(s.poster_path) || undefined}
-                          className="w-full h-full object-cover"
-                          alt={s.name}
-                        />
-                      )}
-                    </div>
-                    <div className="text-xs mt-1 font-semibold">S{s.season_number}</div>
-                    <div className="text-[10px] text-muted">{s.episode_count} eps</div>
-                  </div>
-                ))}
+                {detail.seasons
+                  .filter((s) => s.season_number >= 1)
+                  .map((s) => {
+                    const isActive = browseSeason === s.season_number;
+                    return (
+                      <button
+                        key={s.season_number}
+                        type="button"
+                        onClick={() =>
+                          setBrowseSeason(isActive ? null : s.season_number)
+                        }
+                        className="flex-shrink-0 w-24 text-center group"
+                      >
+                        <div
+                          className={`aspect-[2/3] rounded-md bg-bg overflow-hidden ring-2 transition ${
+                            isActive ? 'ring-accent' : 'ring-transparent group-hover:ring-accent/50'
+                          }`}
+                        >
+                          {s.poster_path && (
+                            <img
+                              src={tmdbImg.logo(s.poster_path) || undefined}
+                              className="w-full h-full object-cover"
+                              alt={s.name}
+                            />
+                          )}
+                        </div>
+                        <div className="text-xs mt-1 font-semibold">S{s.season_number}</div>
+                        <div className="text-[10px] text-muted">{s.episode_count} eps</div>
+                      </button>
+                    );
+                  })}
               </div>
+              {browseSeason !== null && (
+                <EpisodeBrowser
+                  season={browseSeason}
+                  episodeCount={
+                    detail.seasons.find((s) => s.season_number === browseSeason)?.episode_count || 0
+                  }
+                  seriesEpisodes={seriesEpisodes}
+                  watchedEpisodes={watchedEpisodes}
+                  canPlay={canPlay && !!detail.imdb_id}
+                  onPlay={(ep) => setPlayEp({ season: browseSeason, episode: ep })}
+                />
+              )}
             </Section>
           )}
 
@@ -515,6 +556,16 @@ export default function DetailModal({
         media_type={detail.media_type}
         title={detail.title}
         onClose={() => setShowPlayer(false)}
+      />
+    )}
+    {playEp && detail?.imdb_id && PlayerModal && (
+      <PlayerModal
+        imdb_id={detail.imdb_id}
+        media_type="tv"
+        title={`${detail.title} S${String(playEp.season).padStart(2, '0')}E${String(playEp.episode).padStart(2, '0')}`}
+        season={playEp.season}
+        episode={playEp.episode}
+        onClose={() => setPlayEp(null)}
       />
     )}
   </>,
@@ -590,6 +641,108 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h3>
       {children}
+    </div>
+  );
+}
+
+function EpisodeBrowser({
+  season,
+  episodeCount,
+  seriesEpisodes,
+  watchedEpisodes,
+  canPlay,
+  onPlay,
+}: {
+  season: number;
+  episodeCount: number;
+  seriesEpisodes?: {
+    seasons: { season: number; episodes: number[] }[];
+    missing: { season: number; episode: number }[];
+  } | null;
+  watchedEpisodes?: Record<string, number[]> | null;
+  canPlay: boolean;
+  onPlay: (episode: number) => void;
+}) {
+  const available = new Set(
+    seriesEpisodes?.seasons.find((s) => s.season === season)?.episodes ?? [],
+  );
+  const wanted = new Set(
+    (seriesEpisodes?.missing ?? [])
+      .filter((m) => m.season === season)
+      .map((m) => m.episode),
+  );
+  const watched = new Set<number>(watchedEpisodes?.[String(season)] ?? []);
+
+  // Episodes to show: TMDB count, unioned with anything the library knows about.
+  const nums = new Set<number>();
+  for (let i = 1; i <= episodeCount; i++) nums.add(i);
+  available.forEach((e) => nums.add(e));
+  wanted.forEach((e) => nums.add(e));
+  const sorted = Array.from(nums).sort((a, b) => a - b);
+
+  if (sorted.length === 0) {
+    return <p className="text-[11px] text-muted mt-3">No episode info available.</p>;
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {sorted.map((ep) => {
+        const isAvailable = available.has(ep);
+        const isWanted = wanted.has(ep);
+        const isWatched = watched.has(ep);
+        const label = `E${String(ep).padStart(2, '0')}`;
+
+        if (isAvailable && canPlay) {
+          return (
+            <button
+              key={ep}
+              type="button"
+              onClick={() => onPlay(ep)}
+              title={isWatched ? 'Watched - play again' : 'Play in browser'}
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                isWatched
+                  ? 'bg-green-500/20 text-green-400 hover:bg-green-600 hover:text-white'
+                  : 'bg-accent/20 text-accent hover:bg-indigo-600 hover:text-white'
+              }`}
+            >
+              ▶ {label}
+            </button>
+          );
+        }
+        if (isAvailable) {
+          return (
+            <span
+              key={ep}
+              title={isWatched ? 'Watched' : 'Available'}
+              className={`text-xs px-2 py-1 rounded ${
+                isWatched ? 'bg-green-500/20 text-green-400' : 'bg-accent/20 text-accent'
+              }`}
+            >
+              {label}
+            </span>
+          );
+        }
+        if (isWanted) {
+          return (
+            <span
+              key={ep}
+              title="Wanted - not yet cached"
+              className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400"
+            >
+              {label}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={ep}
+            title="Not in library"
+            className="text-xs px-2 py-1 rounded bg-bg text-muted/60"
+          >
+            {label}
+          </span>
+        );
+      })}
     </div>
   );
 }
