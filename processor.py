@@ -557,6 +557,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
             # Best-effort subtitle fetch
             try:
                 import subtitles
+                import podnapisi
                 from pathlib import Path
                 from config import MEDIA_PATH
                 if req.is_movie:
@@ -564,6 +565,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
                     media = Path(MEDIA_PATH) / "movies"
                     for p in sorted(media.rglob("*.strm"), key=lambda p: p.stat().st_mtime, reverse=True)[:3]:
                         subtitles.fetch_for(p, req.imdb_id, "movie")
+                        podnapisi.fetch_for(p, req.title, "movie")
             except Exception as exc:
                 log.debug("Subtitle fetch skipped: %s", exc)
         jellyfin.refresh_library()

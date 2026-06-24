@@ -778,6 +778,11 @@ def create_lazy_movie_strm(info_hash: str, magnet: str, title: str,
                 subtitles.fetch_for(path, imdb_id, "movie")
             except Exception as exc:
                 log.debug("Subtitle fetch skipped for %s: %s", folder, exc)
+            try:
+                import podnapisi
+                podnapisi.fetch_for(path, title, "movie", year=year)
+            except Exception as exc:
+                log.debug("Podnapisi subtitle fetch skipped for %s: %s", folder, exc)
         if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,
@@ -838,6 +843,16 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
                 nfo_generator.fetch_images_for_folder(series_root, imdb_id, "tv")
             except Exception as exc:
                 log.debug("Image fetch skipped for %s: %s", safe_title, exc)
+            try:
+                import subtitles
+                subtitles.fetch_for(path, imdb_id, "series", season=season, episode=episode)
+            except Exception as exc:
+                log.debug("Subtitle fetch skipped for %s: %s", ep_name, exc)
+            try:
+                import podnapisi
+                podnapisi.fetch_for(path, title, "series", season=season, episode=episode)
+            except Exception as exc:
+                log.debug("Podnapisi subtitle fetch skipped for %s: %s", ep_name, exc)
         if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,

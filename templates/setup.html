@@ -265,8 +265,8 @@
 
     <!-- Step 8: OpenSubtitles (Full only) -->
     <div class="step" data-step="8">
-      <h2>OpenSubtitles</h2>
-      <p class="lede">Provides subtitle search in the web player. Free tier gives 500 downloads/day, VIP gives 1 000. &rarr; <a href="https://www.opensubtitles.com/consumers" target="_blank" style="color:var(--accent)">opensubtitles.com/consumers</a></p>
+      <h2>Subtitles</h2>
+      <p class="lede">Provides subtitle search in the web player. OpenSubtitles needs a free API key (500 downloads/day, VIP gives 1 000) &rarr; <a href="https://www.opensubtitles.com/consumers" target="_blank" style="color:var(--accent)">opensubtitles.com/consumers</a>. Podnapisi needs no key at all and is on by default as an extra/fallback source.</p>
       <div class="field">
         <label>API key</label>
         <input type="password" id="OPENSUBTITLES_API_KEY" placeholder="optional">
@@ -276,7 +276,7 @@
       <div class="field">
         <label>Subtitle languages</label>
         <input type="text" id="OPENSUBTITLES_LANGUAGES" placeholder="nl,en">
-        <span class="hint">Comma-separated ISO codes. Tried in order  -  <code>nl,en</code> prefers Dutch, falls back to English.</span>
+        <span class="hint">Comma-separated ISO codes. Tried in order  -  <code>nl,en</code> prefers Dutch, falls back to English. Used by both OpenSubtitles and Podnapisi.</span>
       </div>
     </div>
 
