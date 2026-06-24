@@ -251,7 +251,11 @@ def get(key: str, default=None):
     except Exception as exc:
         log.debug("settings.get: DB read failed for %s (%s); falling back to .env", key, exc)
         raw = None
-    if raw is not None:
+    # An empty-string row is a stale artifact, not a real override: set()
+    # deletes the row when handed "" or None, so a stored "" can only come
+    # from legacy data. Treat it as absent and fall through to the .env
+    # default, otherwise it silently shadows a perfectly good config value.
+    if raw is not None and raw != "":
         coerced = _coerce(key, raw)
         if coerced is not None:
             return coerced
