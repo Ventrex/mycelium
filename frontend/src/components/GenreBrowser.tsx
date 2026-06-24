@@ -6,11 +6,13 @@ import PosterGrid from './PosterGrid';
 import SectionHeader from './SectionHeader';
 import DetailModal from './DetailModal';
 import GenreSettingsModal from './GenreSettingsModal';
+import LanguageSettingsModal from './LanguageSettingsModal';
 import RowExpandModal from './RowExpandModal';
 
 export default function GenreBrowser({ mediaType }: { mediaType: MediaType }) {
   const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLanguageSettings, setShowLanguageSettings] = useState(false);
   const [expanded, setExpanded] = useState<{ title: string; queryKey: unknown[]; fetchPage: (page: number) => Promise<TmdbItem[]> } | null>(null);
   const open = (item: TmdbItem) => setDetail({ id: item.tmdb_id, type: item.media_type });
 
@@ -31,13 +33,22 @@ export default function GenreBrowser({ mediaType }: { mediaType: MediaType }) {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{mediaType === 'tv' ? 'Shows' : 'Movies'}</h1>
-        <button
-          type="button"
-          onClick={() => setShowSettings(true)}
-          className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm flex items-center gap-1.5"
-        >
-          ⚙️ Genres
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowLanguageSettings(true)}
+            className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm flex items-center gap-1.5"
+          >
+            🌐 Languages
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm flex items-center gap-1.5"
+          >
+            ⚙️ Genres
+          </button>
+        </div>
       </div>
 
       <section>
@@ -98,6 +109,9 @@ export default function GenreBrowser({ mediaType }: { mediaType: MediaType }) {
           allGenres={genresData?.all_genres || []}
           onClose={() => setShowSettings(false)}
         />
+      )}
+      {showLanguageSettings && (
+        <LanguageSettingsModal onClose={() => setShowLanguageSettings(false)} />
       )}
       {expanded && (
         <RowExpandModal

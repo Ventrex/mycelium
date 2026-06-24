@@ -6,6 +6,7 @@ import PosterCard from '../components/PosterCard';
 import PersonCard from '../components/PersonCard';
 import DetailModal from '../components/DetailModal';
 import PersonModal from '../components/PersonModal';
+import LanguageSettingsModal from '../components/LanguageSettingsModal';
 
 type TypeFilter = 'all' | MediaType | 'person';
 
@@ -14,6 +15,7 @@ export default function Search() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);
+  const [showLanguageSettings, setShowLanguageSettings] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['search', q],
@@ -40,15 +42,25 @@ export default function Search() {
 
   return (
     <div className="space-y-4">
-      <input
-        type="text"
-        autoFocus
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search movies, series or actors..."
-        className="w-full max-w-xl bg-bg border border-border rounded-lg px-4 py-3 text-sm
-                   focus:outline-none focus:border-accent text-white placeholder-muted/60"
-      />
+      <div className="flex items-center gap-2 max-w-xl">
+        <input
+          type="text"
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search movies, series or actors..."
+          className="flex-1 bg-bg border border-border rounded-lg px-4 py-3 text-sm
+                     focus:outline-none focus:border-accent text-white placeholder-muted/60"
+        />
+        <button
+          type="button"
+          onClick={() => setShowLanguageSettings(true)}
+          title="Language settings"
+          className="shrink-0 px-3 py-3 rounded-lg border border-border hover:border-accent/50 text-sm"
+        >
+          🌐
+        </button>
+      </div>
       <div className="flex gap-2">
         {(['all', 'movie', 'tv', 'person'] as const).map((t) => (
           <button
@@ -108,6 +120,9 @@ export default function Search() {
           open(it);
         }}
       />
+      {showLanguageSettings && (
+        <LanguageSettingsModal onClose={() => setShowLanguageSettings(false)} />
+      )}
     </div>
   );
 }

@@ -190,6 +190,7 @@ def _norm_item(item: dict, media_type: str | None = None) -> dict:
         "poster_path": item.get("poster_path"),
         "backdrop_path": item.get("backdrop_path"),
         "genre_ids": item.get("genre_ids") or [],
+        "original_language": item.get("original_language") or "",
     }
 
 
@@ -386,6 +387,35 @@ def genres(media_type: str = "movie") -> list[dict]:
     result = data.get("genres") or []
     if result:
         db.set_setting(cache_key, _json.dumps({"ts": _time.time(), "genres": result}))
+    return result
+
+
+def languages() -> list[dict]:
+    """Return [{iso_639_1, english_name, name}] for all TMDB-known languages.
+    Cached 7 days in the settings table since this list barely ever changes."""
+    import json as _json
+    import time as _time
+    import db
+    cache_key = "_tmdb_language_cache"
+    cached = db.get_setting(cache_key)
+    if cached:
+        try:
+            payload = _json.loads(cached)
+            cached_langs = payload.get("languages") or []
+            if cached_langs and _time.time() - payload.get("ts", 0) < 604800:
+                return cached_langs
+        except (ValueError, TypeError):
+            pass
+    data = _get("/configuration/languages")
+    if not data:
+        return []
+    result = sorted(
+        [{"iso_639_1": l.get("iso_639_1"), "english_name": l.get("english_name"), "name": l.get("name")}
+         for l in data if l.get("iso_639_1")],
+        key=lambda l: l["english_name"] or "",
+    )
+    if result:
+        db.set_setting(cache_key, _json.dumps({"ts": _time.time(), "languages": result}))
     return result
 
 

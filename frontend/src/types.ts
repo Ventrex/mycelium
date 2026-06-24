@@ -14,6 +14,7 @@ export interface TmdbItem {
   backdrop_path: string | null;
   genre_ids?: number[];
   library_status?: string | null;
+  original_language?: string;
 }
 
 export interface Provider {
@@ -55,6 +56,17 @@ export interface TmdbDetail extends TmdbItem {
 export interface Genre {
   id: number;
   name: string;
+}
+
+export interface Language {
+  iso_639_1: string;
+  english_name: string;
+  name: string;
+}
+
+export interface LanguagePrefs {
+  allowed: string[];
+  excluded: string[];
 }
 
 export interface DiscoverPrefs {
