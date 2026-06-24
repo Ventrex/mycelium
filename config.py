@@ -167,6 +167,11 @@ AUTO_ADD_REGION = _env("AUTO_ADD_REGION", "NL")
 # Per-genre auto-approve rules (configured in the Auto-Approve tab, stored in
 # settings). 0 disables the periodic auto-request-trending scan.
 AUTO_APPROVE_CHECK_INTERVAL_HOURS = _env_int("AUTO_APPROVE_CHECK_INTERVAL_HOURS", 12)
+# Run the auto-approve scan once per day at this hour (local time) instead of on
+# a fixed interval, and cap how many new titles it queues per run so a single
+# day can't flood TorBox. Set the limit to 0 for no cap.
+AUTO_APPROVE_DAILY_HOUR = _env_int("AUTO_APPROVE_DAILY_HOUR", 4)
+AUTO_APPROVE_DAILY_LIMIT = _env_int("AUTO_APPROVE_DAILY_LIMIT", 100)
 
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")

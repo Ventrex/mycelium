@@ -505,6 +505,30 @@ def get_request_by_imdb(imdb_id: str) -> dict | None:
         return dict(row) if row else None
 
 
+def get_imdb_ids_by_tmdb(tmdb_id: int | str) -> set[str]:
+    """Resolve every known imdb_id for a tmdb_id from the requests and
+    monitored_series tables. Used to fully purge a blacklisted title."""
+    ids: set[str] = set()
+    with _connect() as conn:
+        for tbl in ("requests", "monitored_series"):
+            for row in conn.execute(
+                f"SELECT imdb_id FROM {tbl} WHERE tmdb_id=?", (tmdb_id,)
+            ).fetchall():
+                if row["imdb_id"]:
+                    ids.add(row["imdb_id"])
+    return ids
+
+
+def purge_item_rows(imdb_id: str) -> None:
+    """Delete all tracking rows for a title across requests, monitored_series
+    and wanted_episodes. Virtual items are removed separately via their token."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM requests WHERE imdb_id=?", (imdb_id,))
+        conn.execute("DELETE FROM monitored_series WHERE imdb_id=?", (imdb_id,))
+        conn.execute("DELETE FROM wanted_episodes WHERE imdb_id=?", (imdb_id,))
+        conn.commit()
+
+
 def get_recent(limit: int = 100) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(

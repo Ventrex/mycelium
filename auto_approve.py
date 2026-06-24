@@ -21,7 +21,12 @@ import logging
 import db
 import processor
 import tmdb
-from config import AUTO_ADD_MIN_RATING, AUTO_ADD_MIN_VOTES, AUTO_ADD_REGION
+from config import (
+    AUTO_ADD_MIN_RATING,
+    AUTO_ADD_MIN_VOTES,
+    AUTO_ADD_REGION,
+    AUTO_APPROVE_DAILY_LIMIT,
+)
 from webhook_parser import MediaRequest
 
 log = logging.getLogger(__name__)
@@ -149,11 +154,15 @@ def _is_recent_or_upcoming(item: dict) -> bool:
 
 
 def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
-                          movie_bl: set[int], tv_bl: set[int]) -> int:
+                          movie_bl: set[int], tv_bl: set[int],
+                          remaining: int | None = None) -> int:
     """For every favorited actor, queue their recent/upcoming movies and shows
-    that aren't already in the library."""
+    that aren't already in the library. Stops once `remaining` new titles have
+    been queued (None means no cap)."""
     total = 0
     for actor in db.get_favorite_actors():
+        if remaining is not None and total >= remaining:
+            break
         person_id, name = actor.get("tmdb_id"), actor.get("name") or ""
         try:
             detail = tmdb.person_details(person_id)
@@ -165,6 +174,8 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
         added = 0
         for item in detail.get("filmography") or []:
             if added >= FAVORITE_ACTOR_PER_ACTOR_LIMIT:
+                break
+            if remaining is not None and total + added >= remaining:
                 break
             media_type = item.get("media_type")
             if media_type not in ("movie", "tv"):
@@ -182,11 +193,19 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
     return total
 
 
-def run() -> int:
+def run(limit: int | None = None) -> int:
     """Scheduled job: for every genre with auto_request_trending enabled,
     fetch the most popular items in that genre/year window and queue the
     ones we don't have yet - this is what auto-fills the library. Also
-    queues recent/upcoming work for any favorited actor."""
+    queues recent/upcoming work for any favorited actor.
+
+    `limit` caps how many new titles a single run queues (defaults to
+    AUTO_APPROVE_DAILY_LIMIT; 0 or None means no cap). Already-requested
+    movies and monitored series are skipped, so nothing is requested twice."""
+    if limit is None:
+        limit = AUTO_APPROVE_DAILY_LIMIT
+    cap = limit if limit and limit > 0 else None
+
     total = 0
     seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie"}
     seen_series = {s["imdb_id"] for s in db.get_all_monitored_series()}
@@ -196,8 +215,12 @@ def run() -> int:
 
     for media_type, queue_fn, seen, media_bl in (("movie", _queue_movie, seen_movies, movie_bl),
                                                   ("tv", _queue_series, seen_series, tv_bl)):
+        if cap is not None and total >= cap:
+            break
         rules = get_rules(media_type)
         for genre_id_str, rule in rules.items():
+            if cap is not None and total >= cap:
+                break
             if not rule.get("enabled") or not rule.get("auto_request_trending"):
                 continue
             genre_id = int(genre_id_str)
@@ -206,6 +229,8 @@ def run() -> int:
             added = 0
             for item in items:
                 if added >= AUTO_REQUEST_PER_GENRE_LIMIT:
+                    break
+                if cap is not None and total + added >= cap:
                     break
                 if item.get("tmdb_id") in media_bl:
                     continue
@@ -219,7 +244,10 @@ def run() -> int:
                 log.info("Auto-approve genre=%s/%s: %d new item(s) queued", media_type, genre_id, added)
             total += added
 
-    total += _run_favorite_actors(seen_movies, seen_series, movie_bl, tv_bl)
+    remaining = None if cap is None else max(cap - total, 0)
+    if remaining is None or remaining > 0:
+        total += _run_favorite_actors(seen_movies, seen_series, movie_bl, tv_bl, remaining)
 
-    log.info("Auto-approve: %d total item(s) added across all genre rules", total)
+    log.info("Auto-approve: %d total item(s) added (daily cap %s)",
+             total, cap if cap is not None else "off")
     return total

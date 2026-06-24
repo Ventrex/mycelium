@@ -388,6 +388,67 @@ def _series_clean_title(raw: str) -> str:
     return re.sub(r"[\[\(\{\s\-]+$", "", s).strip() or raw
 
 
+def purge_blacklisted_content(media_type: str, tmdb_id: int,
+                              imdb_id: str | None = None) -> dict:
+    """Tear down a single blacklisted title: remove its torrent from TorBox,
+    delete its .strm files from the library, and remove the matching item from
+    Jellyfin. This only touches the one title  -  the TorBox account and the
+    Jellyfin server themselves are untouched. Returns a summary for logging.
+    """
+    imdb_ids: set[str] = set()
+    if imdb_id:
+        imdb_ids.add(imdb_id)
+    try:
+        resolved = tmdb.tmdb_to_imdb(
+            tmdb_id, media_type=("movie" if media_type == "movie" else "tv"))
+        if resolved:
+            imdb_ids.add(resolved)
+    except Exception as exc:
+        log.debug("purge: tmdb_to_imdb failed for %s: %s", tmdb_id, exc)
+    imdb_ids |= db.get_imdb_ids_by_tmdb(tmdb_id)
+
+    # Jellyfin first: deleting the item there also drops the file Jellyfin sees,
+    # then we clean up anything left on our side.
+    jf_deleted = 0
+    try:
+        jf_deleted = jellyfin.delete_by_provider(
+            tmdb_id=tmdb_id, imdb_ids=imdb_ids, media_type=media_type)
+    except Exception as exc:
+        log.warning("purge: jellyfin delete failed for tmdb=%s: %s", tmdb_id, exc)
+
+    removed_torrents = 0
+    removed_strm = 0
+    for iid in imdb_ids:
+        for item in db.get_virtual_items_by_imdb(iid):
+            tb_id = item.get("torbox_id")
+            if tb_id:
+                try:
+                    if torbox.delete_torrent(tb_id):
+                        removed_torrents += 1
+                except Exception as exc:
+                    log.warning("purge: torbox delete failed for %s: %s", tb_id, exc)
+            sp = item.get("strm_path")
+            if sp:
+                try:
+                    p = Path(sp)
+                    p.unlink(missing_ok=True)
+                    p.with_suffix(".nfo").unlink(missing_ok=True)
+                    removed_strm += 1
+                except Exception as exc:
+                    log.warning("purge: strm remove failed for %s: %s", sp, exc)
+            db.delete_virtual_item(item["token"])
+        db.purge_item_rows(iid)
+
+    try:
+        remove_orphan_folders()
+    except Exception as exc:
+        log.debug("purge: orphan folder sweep failed: %s", exc)
+
+    log.info("Purged blacklisted %s tmdb=%s imdb=%s: %d torrent(s), %d strm, %d jellyfin item(s)",
+             media_type, tmdb_id, imdb_ids or None, removed_torrents, removed_strm, jf_deleted)
+    return {"torrents": removed_torrents, "strm": removed_strm, "jellyfin": jf_deleted}
+
+
 def remove_orphan_folders() -> int:
     """Delete movie/series folders that no longer contain any .strm file.
 

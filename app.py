@@ -38,6 +38,7 @@ import watchdog
 import zilean
 from config import (
     AUTO_APPROVE_CHECK_INTERVAL_HOURS,
+    AUTO_APPROVE_DAILY_HOUR,
     AUTO_UPGRADE_ENABLED,
     AUTO_UPGRADE_INTERVAL_HOURS,
     BACKUP_INTERVAL_HOURS,
@@ -358,12 +359,14 @@ def _start_scheduler() -> BackgroundScheduler:
                      TRENDING_CHECK_INTERVAL_HOURS, _auto_add_total)
 
         if AUTO_APPROVE_CHECK_INTERVAL_HOURS > 0:
+            # Run once a day at a fixed hour. A 7-minute offset keeps it off the
+            # exact hour mark so it doesn't pile onto other top-of-hour jobs.
             scheduler.add_job(
                 auto_approve.run,
-                trigger="interval", hours=AUTO_APPROVE_CHECK_INTERVAL_HOURS,
+                trigger="cron", hour=AUTO_APPROVE_DAILY_HOUR, minute=7,
                 id="auto_approve_scan", next_run_time=None,
             )
-            log.info("Scheduled auto-approve genre scan every %dh", AUTO_APPROVE_CHECK_INTERVAL_HOURS)
+            log.info("Scheduled daily auto-approve scan at %02d:07", AUTO_APPROVE_DAILY_HOUR)
 
         if CONTINUE_WATCHING_INTERVAL_MINUTES > 0:
             scheduler.add_job(
@@ -2069,6 +2072,17 @@ def ui_api_content_blacklist_add():
     if kind not in ("movie", "tv", "person") or not tmdb_id or not title:
         return jsonify(error="kind, tmdb_id and title required"), 400
     db.add_content_blacklist(kind, int(tmdb_id), title, payload.get("image"))
+    # Blacklisting a movie/show also tears it down: remove its torrent from
+    # TorBox, its .strm files, and the matching Jellyfin item. Done in the
+    # background so the request returns immediately. Person blacklists have no
+    # library footprint, so nothing to purge there.
+    if kind in ("movie", "tv"):
+        threading.Thread(
+            target=cleanup.purge_blacklisted_content,
+            args=(kind, int(tmdb_id)),
+            kwargs={"imdb_id": payload.get("imdb_id")},
+            name=f"purge-blacklist-{tmdb_id}", daemon=True,
+        ).start()
     return jsonify(status="added")
 
 

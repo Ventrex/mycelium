@@ -34,6 +34,73 @@ def _jf_headers() -> dict:
     return h
 
 
+def delete_by_provider(tmdb_id: int | str | None = None,
+                       imdb_ids: set | list | None = None,
+                       media_type: str | None = None,
+                       timeout: int = 30) -> int:
+    """Delete Movie/Series items from Jellyfin whose ProviderIds match the given
+    TMDB id or any of the IMDb ids. Used when a title is blacklisted so it stops
+    showing up in the library. An admin API key (the only kind Jellyfin issues)
+    is enough; no extra per-user delete permission is needed. Returns the number
+    of Jellyfin items deleted."""
+    JELLYFIN_URL = settings.get("JELLYFIN_URL")
+    if not JELLYFIN_URL:
+        log.warning("JELLYFIN_URL not set; skipping delete_by_provider")
+        return 0
+    if not tmdb_id and not imdb_ids:
+        return 0
+
+    base = JELLYFIN_URL.rstrip("/")
+    headers = _jf_headers()
+    if media_type == "movie":
+        types = "Movie"
+    elif media_type in ("tv", "series"):
+        types = "Series"
+    else:
+        types = "Movie,Series"
+    imdb_set = {i for i in (imdb_ids or []) if i}
+    tmdb_str = str(tmdb_id) if tmdb_id else None
+
+    try:
+        resp = requests.get(
+            f"{base}/Items",
+            headers=headers,
+            params={"IncludeItemTypes": types, "Recursive": "true",
+                    "Fields": "ProviderIds", "Limit": 5000},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("Items") or []
+    except Exception as exc:
+        log.error("Jellyfin delete_by_provider: could not fetch items: %s", exc)
+        return 0
+
+    target_ids = []
+    for item in items:
+        provider = item.get("ProviderIds") or {}
+        imdb = provider.get("Imdb") or provider.get("imdb")
+        tmdb_v = provider.get("Tmdb") or provider.get("tmdb")
+        if (tmdb_str and str(tmdb_v) == tmdb_str) or (imdb and imdb in imdb_set):
+            target_ids.append(item["Id"])
+
+    deleted = 0
+    for item_id in target_ids:
+        try:
+            r = requests.delete(f"{base}/Items/{item_id}", headers=headers, timeout=timeout)
+            if r.status_code < 400:
+                deleted += 1
+            else:
+                log.warning("Jellyfin delete %s failed: %s %s",
+                            item_id, r.status_code, r.text[:200])
+        except Exception as exc:
+            log.warning("Jellyfin delete error for %s: %s", item_id, exc)
+
+    if deleted:
+        log.info("Jellyfin: deleted %d item(s) for tmdb=%s imdb=%s",
+                 deleted, tmdb_id, imdb_set or None)
+    return deleted
+
+
 def merge_duplicate_versions(timeout: int = 60) -> bool:
     """Find duplicate movies in Jellyfin and merge their versions."""
     JELLYFIN_URL = settings.get("JELLYFIN_URL")
