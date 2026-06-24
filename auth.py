@@ -162,6 +162,25 @@ def current_user_record() -> dict | None:
     return None
 
 
+def bootstrap_open() -> bool:
+    """True while auth is on but no credential exists anywhere yet
+    (no DB users, no scrypt hash, no legacy plain password). Without this,
+    enabling auth before the first account exists locks everyone out
+    permanently: every page redirects to /login, but /login can never
+    succeed, and the account-creation screen lives behind that same gate."""
+    try:
+        import db
+        if db.user_count() > 0:
+            return False
+    except Exception:
+        return False
+    if settings.get("AUTH_PASSWORD_HASH", ""):
+        return False
+    if settings.get("AUTH_PASSWORD", ""):
+        return False
+    return True
+
+
 def is_admin() -> bool:
     # Auth disabled → single-user mode, full admin access.
     if not is_enabled():
@@ -276,6 +295,8 @@ def install_before_request(app) -> None:
     @app.before_request
     def _enforce():
         if not is_enabled():
+            return None
+        if bootstrap_open():
             return None
         path = request.path
         # Public paths are always allowed

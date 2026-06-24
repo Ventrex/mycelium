@@ -2,19 +2,24 @@ import logging
 
 import requests as req_lib
 
-from config import TMDB_API_KEY
-
 log = logging.getLogger(__name__)
 
 _BASE = "https://api.themoviedb.org/3"
 
 
+def _api_key() -> str:
+    """Read the key from the runtime settings overlay (DB override, then
+    .env) so changes in the Settings UI take effect without a restart."""
+    import settings
+    return (settings.get("TMDB_API_KEY", "") or "").strip()
+
+
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {TMDB_API_KEY}", "Accept": "application/json"}
+    return {"Authorization": f"Bearer {_api_key()}", "Accept": "application/json"}
 
 
 def _get(path: str, params: dict | None = None, timeout: int = 10) -> dict | None:
-    if not TMDB_API_KEY:
+    if not _api_key():
         log.warning("TMDB_API_KEY not set; skipping %s", path)
         return None
     try:

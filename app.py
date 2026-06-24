@@ -2455,11 +2455,13 @@ def ui_api_users():
 @app.post("/ui/api/users/create")
 def ui_api_users_create():
     import settings as _settings
-    # Bootstrap: only allow unauthenticated first-admin creation when no users exist AND
-    # SETUP_COMPLETE has never been set. This prevents re-opening the window if all
-    # users are somehow deleted after initial setup.
-    setup_done = bool(_settings.get("SETUP_COMPLETE", False))
-    if db.user_count() == 0 and not setup_done:
+    # Bootstrap: allow unauthenticated first-admin creation only while no
+    # credential exists anywhere (no users, no password hash, no legacy plain
+    # password). This both opens the window on a genuinely fresh install and
+    # reopens it if an auth-enabled instance ends up with no usable login at
+    # all - otherwise the operator is permanently locked out. The instant any
+    # real credential exists, this window closes again.
+    if auth.bootstrap_open():
         p = request.get_json(silent=True) or {}
         username = (p.get("username") or "").strip()
         password = p.get("password") or ""
