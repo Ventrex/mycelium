@@ -340,7 +340,7 @@ def details(media_type: str, tmdb_id: int, region: str = "NL") -> dict | None:
         item["number_of_seasons"] = data.get("number_of_seasons")
         item["number_of_episodes"] = data.get("number_of_episodes")
     cast = ((data.get("credits") or {}).get("cast") or [])[:12]
-    item["cast"] = [{"name": c.get("name"), "character": c.get("character"),
+    item["cast"] = [{"id": c.get("id"), "name": c.get("name"), "character": c.get("character"),
                      "profile_path": c.get("profile_path")} for c in cast]
     videos = ((data.get("videos") or {}).get("results") or [])
     item["trailers"] = [{"key": v.get("key"), "name": v.get("name"), "site": v.get("site")}

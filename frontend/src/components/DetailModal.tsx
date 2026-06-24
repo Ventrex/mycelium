@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, tmdbImg } from '../api';
 import type { MediaType, TmdbItem, WatchlistItem } from '../types';
 import TrailerModal from './TrailerModal';
+import PersonModal from './PersonModal';
 import { usePluginSlot } from '../hooks/usePluginSlots';
 import { useWatched } from '../hooks/useWatched';
 
@@ -87,6 +88,7 @@ export default function DetailModal({
   // TV monitoring scope
   const [showTrailer, setShowTrailer] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [castPersonId, setCastPersonId] = useState<number | null>(null);
   const [monitorMode, setMonitorMode] = useState<'all' | 'future' | 'selected'>('all');
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>([]);
 
@@ -453,23 +455,39 @@ export default function DetailModal({
           {detail?.cast && detail.cast.length > 0 && (
             <Section title="Cast">
               <div className="flex gap-3 overflow-x-auto scrollbar-hidden">
-                {detail.cast.map((c, i) => (
-                  <div key={i} className="flex-shrink-0 w-20 text-center">
-                    <div className="w-20 h-20 rounded-full bg-bg overflow-hidden">
-                      {c.profile_path && (
-                        <img
-                          src={tmdbImg.profile(c.profile_path) || undefined}
-                          alt={c.name}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="text-[11px] mt-1 font-semibold leading-tight line-clamp-2">
-                      {c.name}
-                    </div>
-                    <div className="text-[10px] text-muted line-clamp-2">{c.character}</div>
-                  </div>
-                ))}
+                {detail.cast.map((c, i) => {
+                  const clickable = !!c.id;
+                  const Tag = clickable ? 'button' : 'div';
+                  return (
+                    <Tag
+                      key={i}
+                      {...(clickable
+                        ? { type: 'button' as const, onClick: () => setCastPersonId(c.id!) }
+                        : {})}
+                      className={`flex-shrink-0 w-20 text-center ${
+                        clickable ? 'group cursor-pointer' : ''
+                      }`}
+                    >
+                      <div
+                        className={`w-20 h-20 rounded-full bg-bg overflow-hidden ${
+                          clickable ? 'ring-0 group-hover:ring-2 ring-accent transition' : ''
+                        }`}
+                      >
+                        {c.profile_path && (
+                          <img
+                            src={tmdbImg.profile(c.profile_path) || undefined}
+                            alt={c.name}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                      <div className="text-[11px] mt-1 font-semibold leading-tight line-clamp-2">
+                        {c.name}
+                      </div>
+                      <div className="text-[10px] text-muted line-clamp-2">{c.character}</div>
+                    </Tag>
+                  );
+                })}
               </div>
             </Section>
           )}
@@ -515,6 +533,16 @@ export default function DetailModal({
         media_type={detail.media_type}
         title={detail.title}
         onClose={() => setShowPlayer(false)}
+      />
+    )}
+    {castPersonId !== null && (
+      <PersonModal
+        personId={castPersonId}
+        onClose={() => setCastPersonId(null)}
+        onSelectItem={(it) => {
+          setCastPersonId(null);
+          onSelectItem(it);
+        }}
       />
     )}
   </>,
