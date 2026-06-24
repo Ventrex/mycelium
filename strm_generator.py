@@ -252,9 +252,14 @@ def _write_nfo(strm_path: Path, imdb_id: str | None, tmdb_id: int | None = None,
     nfo_path = nfo_path or strm_path.with_suffix(".nfo")
     if nfo_path.exists():
         return
-    m = _YEAR_RE.search(strm_path.parent.name)
+    # Title comes from the NFO's own folder, not the strm's folder: for a
+    # tvshow.nfo, nfo_path is explicitly the series root, while strm_path
+    # is the episode file one level down inside "Season NN" -  using
+    # strm_path.parent.name there would write "Season NN" as the show title.
+    title_source = nfo_path.parent.name
+    m = _YEAR_RE.search(title_source)
     year = int(m.group(1)) if m else None
-    title = _YEAR_RE.sub("", strm_path.parent.name).replace("()", "").strip() if m else strm_path.parent.name
+    title = _YEAR_RE.sub("", title_source).replace("()", "").strip() if m else title_source
 
     fileinfo = _fileinfo_xml(quality)
 

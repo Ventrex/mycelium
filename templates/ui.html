@@ -550,6 +550,10 @@
             <button class="btn btn-secondary btn-sm" onclick="fixImdbTitles(this)">Fix IMDB titles</button>
             <span class="dim">Rename items still using tt-codes as title</span>
           </div>
+          <div class="maint-item">
+            <button class="btn btn-secondary btn-sm" onclick="repairTvshowTitles(this)">Fix series titles</button>
+            <span class="dim">Rewrite tvshow.nfo files titled "Season XX"</span>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -1594,6 +1598,25 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Fix IMDB titles';
+    }
+  }
+
+  async function repairTvshowTitles(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    try {
+      const r = await fetch('/ui/api/repair-tvshow-titles', { method: 'POST' });
+      const d = await r.json();
+      if (d.fixed === 0) {
+        toast('Fix series titles', 'No tvshow.nfo files needed fixing', 'ok');
+      } else {
+        toast('Fix series titles', `Fixed ${d.fixed}, skipped ${d.skipped}  -  rerun a Jellyfin library scan`, 'ok');
+      }
+    } catch(e) {
+      toast('Fix series titles failed', e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Fix series titles';
     }
   }
 
