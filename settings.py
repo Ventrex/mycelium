@@ -39,7 +39,7 @@ _BOOL_KEYS = {
     "AUTH_ENABLED",
     "TRUSTED_PROXY_AUTH",
     "LITE_MODE",
-    "PODNAPISI_ENABLED",
+    "SUBLIMINAL_ENABLED",
 }
 _LIST_KEYS = {
     "QUALITY_PREFERENCE",
@@ -48,7 +48,7 @@ _LIST_KEYS = {
     "OPENSUBTITLES_LANGUAGES",
 }
 # People type a language by whatever name/code they know it under. The APIs
-# we query (OpenSubtitles, Podnapisi) expect the ISO 639-1 code, so normalize
+# we query (OpenSubtitles, subliminal) expect the ISO 639-1 code, so normalize
 # common alternates here, once, for every consumer of OPENSUBTITLES_LANGUAGES.
 _LANGUAGE_ALIASES = {
     "dutch": "nl", "dut": "nl", "nld": "nl", "ned": "nl",
@@ -116,7 +116,7 @@ HOT_RELOAD = {
     "AUDIO_LANGUAGE_PREFERENCE",
     "EXCLUDE_LANGUAGES",
     "OPENSUBTITLES_LANGUAGES",
-    "PODNAPISI_ENABLED",
+    "SUBLIMINAL_ENABLED",
     "BLACKLIST_FAIL_THRESHOLD",
     "WEB_PLAYER_MAX_SIZE_GB",
     "NOTIFY_ON_SUCCESS",
@@ -187,7 +187,7 @@ SETTING_GROUPS = [
         "title": "Languages & subtitles",
         "category": "quality",
         "keys": ["AUDIO_LANGUAGE_PREFERENCE", "EXCLUDE_LANGUAGES", "OPENSUBTITLES_LANGUAGES",
-                 "OPENSUBTITLES_API_KEY", "PODNAPISI_ENABLED"],
+                 "OPENSUBTITLES_API_KEY", "SUBLIMINAL_ENABLED"],
     },
     {
         "id": "auto",
