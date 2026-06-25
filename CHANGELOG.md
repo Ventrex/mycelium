@@ -8,10 +8,12 @@ All notable changes to Mycelium are documented in this file.
 
 - **Subliminal subtitle fallback**: multi-provider subtitle search (Addic7ed, TVsubtitles, Gestdown, BSPlayer), free and no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `SUBLIMINAL_ENABLED` (on by default).
 - **Self-hosted Zilean in docker-compose.yml**: `zilean` + `zilean-postgres` services bundled directly in the compose file, behind a `zilean` profile so they only start when opted in (`docker compose --profile zilean up -d`). Set `ZILEAN_URL=http://zilean:8181` to use the bundled instance instead of an external one.
+- **OpenSubtitles account login**: `OPENSUBTITLES_USERNAME`/`OPENSUBTITLES_PASSWORD` (optional) log in for a bearer token instead of using the API key anonymously, raising the daily download quota from 5 (anonymous) to 20 (free account) or 1000 (VIP), no code change needed to upgrade tiers later.
 
 ### Fixed
 
 - **bsplayer log noise**: the subliminal library logged a full traceback at ERROR level on every retry against an unreachable mirror, both from its own provider logger and from its shared error-handling helper (`subliminal.utils`); both are now silenced since `subliminal_fallback.py` already reports the same failure as one clean line. Connect timeout also lowered to 5s.
+- **OpenSubtitles 406 errors hid the real reason**: download failures only logged the generic HTTP status, not OpenSubtitles' own error message (e.g. "daily quota exceeded"); now surfaced in the log line.
 
 ### Removed
 

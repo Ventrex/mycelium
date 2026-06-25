@@ -364,7 +364,8 @@ Full reference: [`.env.example`](.env.example). Key variables:
 | `WEBDAV_ENABLED` | `false` | Serve library as virtual .mkv files (Plex) |
 | `DISCORD_WEBHOOK_URL` | *(empty)* | Optional notifications |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty)* | Optional notifications |
-| `OPENSUBTITLES_API_KEY` | *(empty)* | Auto subtitle download |
+| `OPENSUBTITLES_API_KEY` | *(empty)* | Auto subtitle download. 5/day anonymous |
+| `OPENSUBTITLES_USERNAME` / `OPENSUBTITLES_PASSWORD` | *(empty)* | Optional login, raises quota to 20/day (free) or 1000/day (VIP) |
 | `SUBLIMINAL_ENABLED` | `true` | Free, no API key, subtitle download fallback (Addic7ed, TVsubtitles, Gestdown, BSPlayer) |
 | `METRICS_TOKEN` | *(empty)* | Bearer token for `/metrics` scraping |
 

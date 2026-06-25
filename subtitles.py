@@ -1,11 +1,15 @@
 """OpenSubtitles .srt fetch for newly created .strm files.
 
-Best-effort: needs OPENSUBTITLES_API_KEY in .env. Free tier allows 5
-downloads/day per API key, paid tier higher. Skips silently if not configured.
+Best-effort: needs OPENSUBTITLES_API_KEY in .env. Anonymous requests are
+capped at 5 downloads/day; setting OPENSUBTITLES_USERNAME/PASSWORD logs in
+with a real account instead, raising that to 20/day (free) or 1000/day
+(VIP). Skips silently if not configured.
 
 API docs: https://opensubtitles.stoplight.io/docs/opensubtitles-api/
 """
 import logging
+import threading
+import time
 from pathlib import Path
 
 import requests
@@ -16,9 +20,20 @@ from config import OPENSUBTITLES_USER_AGENT
 log = logging.getLogger(__name__)
 _BASE = "https://api.opensubtitles.com/api/v1"
 
+_token_lock = threading.Lock()
+_token_cache = {"token": None, "expires_at": 0.0}
+
 
 def _api_key() -> str:
     return _settings.get("OPENSUBTITLES_API_KEY", "")
+
+
+def _username() -> str:
+    return _settings.get("OPENSUBTITLES_USERNAME", "")
+
+
+def _password() -> str:
+    return _settings.get("OPENSUBTITLES_PASSWORD", "")
 
 
 def _languages() -> list[str]:
@@ -28,13 +43,61 @@ def _languages() -> list[str]:
     return [l.strip().lower() for l in (raw or "").split(",") if l.strip()]
 
 
+def _login() -> str | None:
+    try:
+        r = requests.post(
+            f"{_BASE}/login",
+            headers={
+                "Api-Key": _api_key(),
+                "User-Agent": OPENSUBTITLES_USER_AGENT,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={"username": _username(), "password": _password()},
+            timeout=10,
+        )
+        r.raise_for_status()
+        token = (r.json() or {}).get("token")
+        if token:
+            log.info("OpenSubtitles: logged in as %s (higher download quota)", _username())
+        return token
+    except Exception as exc:
+        log.warning("OpenSubtitles login failed: %s", exc)
+        return None
+
+
+def _get_token(force: bool = False) -> str | None:
+    """JWT is valid ~24h server-side; cached in-memory and refreshed a bit
+    early, or immediately on a forced refresh after a 401."""
+    if not _username() or not _password():
+        return None
+    with _token_lock:
+        if force or _token_cache["token"] is None or time.time() >= _token_cache["expires_at"]:
+            _token_cache["token"] = _login()
+            _token_cache["expires_at"] = time.time() + 20 * 3600
+        return _token_cache["token"]
+
+
 def _headers() -> dict:
-    return {
+    headers = {
         "Api-Key": _api_key(),
         "User-Agent": OPENSUBTITLES_USER_AGENT,
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+    token = _get_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _request(method: str, path: str, **kwargs) -> requests.Response:
+    """Retries once with a forced re-login if the cached bearer token was
+    rejected (expired/revoked); a no-op when no account is configured."""
+    r = requests.request(method, f"{_BASE}{path}", headers=_headers(), **kwargs)
+    if r.status_code == 401 and _get_token(force=True):
+        r = requests.request(method, f"{_BASE}{path}", headers=_headers(), **kwargs)
+    return r
 
 
 def _search(imdb_id: str | None, season: int | None, episode: int | None,
@@ -52,7 +115,7 @@ def _search(imdb_id: str | None, season: int | None, episode: int | None,
     if episode is not None:
         params["episode_number"] = episode
     try:
-        r = requests.get(f"{_BASE}/subtitles", headers=_headers(), params=params, timeout=10)
+        r = _request("GET", "/subtitles", params=params, timeout=10)
         r.raise_for_status()
         return (r.json() or {}).get("data") or []
     except Exception as exc:
@@ -62,12 +125,7 @@ def _search(imdb_id: str | None, season: int | None, episode: int | None,
 
 def _request_download_url(file_id: int) -> str | None:
     try:
-        r = requests.post(
-            f"{_BASE}/download",
-            headers=_headers(),
-            json={"file_id": file_id},
-            timeout=10,
-        )
+        r = _request("POST", "/download", json={"file_id": file_id}, timeout=10)
         r.raise_for_status()
         return (r.json() or {}).get("link")
     except requests.exceptions.HTTPError as exc:
