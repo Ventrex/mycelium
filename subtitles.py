@@ -70,6 +70,18 @@ def _request_download_url(file_id: int) -> str | None:
         )
         r.raise_for_status()
         return (r.json() or {}).get("link")
+    except requests.exceptions.HTTPError as exc:
+        # OpenSubtitles puts the real reason (e.g. quota exceeded) in the
+        # response body; the generic exception string only has the status code.
+        detail = ""
+        if exc.response is not None:
+            try:
+                detail = (exc.response.json() or {}).get("message", "")
+            except ValueError:
+                detail = exc.response.text[:200]
+        log.warning("OpenSubtitles download request failed (file_id=%s): %s%s",
+                    file_id, exc, f" -- {detail}" if detail else "")
+        return None
     except Exception as exc:
         log.warning("OpenSubtitles download request failed (file_id=%s): %s", file_id, exc)
         return None
