@@ -35,11 +35,16 @@ def _headers() -> dict:
     }
 
 
-def _search(imdb_id: str, season: int | None, episode: int | None,
-            language: str, verbose: bool = False) -> list[dict]:
+def _search(imdb_id: str | None, season: int | None, episode: int | None,
+            language: str, title: str | None = None, verbose: bool = False) -> list[dict]:
     params = {"languages": language}
-    # OS expects numeric imdb id (no "tt" prefix)
-    params["imdb_id"] = imdb_id.lstrip("t")
+    if imdb_id:
+        # OS expects numeric imdb id (no "tt" prefix)
+        params["imdb_id"] = imdb_id.lstrip("t")
+    elif title:
+        params["query"] = title
+    else:
+        return []
     if season is not None:
         params["season_number"] = season
     if episode is not None:
@@ -68,13 +73,16 @@ def _request_download_url(file_id: int) -> str | None:
         return None
 
 
-def fetch_for(strm_path: Path, imdb_id: str, media_type: str,
+def fetch_for(strm_path: Path, imdb_id: str | None, media_type: str,
               season: int | None = None, episode: int | None = None,
-              verbose: bool = False) -> int:
+              title: str | None = None, verbose: bool = False) -> int:
     """Download configured-language subtitles next to a .strm file.
-    Returns count of files written. With verbose=True (used by the manual
-    "Search" action), logs the reason when a language yields nothing, so
-    failures are visible in the Logs tab instead of swallowed silently."""
+    Returns count of files written. Tries the imdb_id first; if that finds
+    nothing and a title is given, retries with a title/query search, since
+    not every release is linked to an imdb_id in OpenSubtitles' database.
+    With verbose=True (used by the manual "Search" action), logs the reason
+    when a language yields nothing, so failures are visible in the Logs tab
+    instead of swallowed silently."""
     api_key = _api_key()
     languages = _languages()
     if not api_key:
@@ -90,10 +98,13 @@ def fetch_for(strm_path: Path, imdb_id: str, media_type: str,
         target = strm_path.with_suffix(f".{lang}.srt")
         if target.exists():
             continue
-        results = _search(imdb_id, season, episode, lang, verbose=verbose)
+        results = _search(imdb_id, season, episode, lang, verbose=verbose) if imdb_id else []
+        if not results and title:
+            results = _search(None, season, episode, lang, title=title, verbose=verbose)
         if not results:
             if verbose:
-                log.info("OpenSubtitles: no results for %s (imdb=%s, lang=%s)", strm_path.name, imdb_id, lang)
+                log.info("OpenSubtitles: no results for %s (imdb=%s, title=%r, lang=%s)",
+                          strm_path.name, imdb_id or "none", title or "none", lang)
             continue
         # Pick most-downloaded file from top result
         top = results[0]

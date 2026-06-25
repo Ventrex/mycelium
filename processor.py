@@ -564,7 +564,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
                     # Find newest .strm in movies for this title (rough match)
                     media = Path(MEDIA_PATH) / "movies"
                     for p in sorted(media.rglob("*.strm"), key=lambda p: p.stat().st_mtime, reverse=True)[:3]:
-                        subtitles.fetch_for(p, req.imdb_id, "movie")
+                        subtitles.fetch_for(p, req.imdb_id, "movie", title=req.title)
                         podnapisi.fetch_for(p, req.title, "movie")
             except Exception as exc:
                 log.debug("Subtitle fetch skipped: %s", exc)

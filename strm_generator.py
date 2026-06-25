@@ -587,14 +587,13 @@ def force_fetch_subtitles(rel_path: str) -> dict:
 
     log.info("Subtitle search started: %s", rel_path)
     written = 0
-    if imdb_id:
-        try:
-            import subtitles
-            written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode, verbose=True)
-        except Exception as exc:
-            log.warning("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
-    else:
-        log.warning("Subtitle search: no imdb_id found for %s (check .nfo), OpenSubtitles skipped", rel_path)
+    if not imdb_id:
+        log.info("Subtitle search: no imdb_id found for %s (check .nfo), falling back to title search", rel_path)
+    try:
+        import subtitles
+        written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode, title=title, verbose=True)
+    except Exception as exc:
+        log.warning("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
     try:
         import podnapisi
         written += podnapisi.fetch_for(strm, title, media_type, season=season, episode=episode, year=year, verbose=True)
@@ -914,7 +913,7 @@ def create_lazy_movie_strm(info_hash: str, magnet: str, title: str,
                 log.debug("Image fetch skipped for %s: %s", folder, exc)
             try:
                 import subtitles
-                subtitles.fetch_for(path, imdb_id, "movie")
+                subtitles.fetch_for(path, imdb_id, "movie", title=title)
             except Exception as exc:
                 log.debug("Subtitle fetch skipped for %s: %s", folder, exc)
             try:
@@ -984,7 +983,7 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
                 log.debug("Image fetch skipped for %s: %s", safe_title, exc)
             try:
                 import subtitles
-                subtitles.fetch_for(path, imdb_id, "series", season=season, episode=episode)
+                subtitles.fetch_for(path, imdb_id, "series", season=season, episode=episode, title=title)
             except Exception as exc:
                 log.debug("Subtitle fetch skipped for %s: %s", ep_name, exc)
             try:
