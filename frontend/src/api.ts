@@ -20,6 +20,7 @@ import type {
   BlacklistKind,
   ContentBlacklistItem,
   FavoriteActor,
+  SubtitleItem,
 } from './types';
 
 const csrfToken = (): string => {
@@ -350,6 +351,16 @@ export const api = {
     http<{ scanned: number; ok: number; orphaned_tokens: number; relinked: number; deleted: number; skipped: number }>(
       '/ui/api/repair-strms', { method: 'POST' }
     ),
+
+  // Subtitles
+  subtitles: () =>
+    http<{ items: SubtitleItem[]; wanted_languages: string[] }>('/ui/api/subtitles'),
+  subtitlesSearch: (strm: string) =>
+    http<{ ok: boolean; written: number; languages: string[]; error?: string }>(
+      '/ui/api/subtitles/search', { method: 'POST', body: JSON.stringify({ strm }) }
+    ),
+  subtitlesSearchAll: () =>
+    http<{ ok: boolean; started: string }>('/ui/api/subtitles/search-all', { method: 'POST' }),
 };
 
 // Image helpers  -  TMDB image CDN

@@ -490,6 +490,140 @@ def _find_movie_folder_by_imdb(imdb_id: str) -> Path | None:
     return None
 
 
+# ── Subtitle library status / on-demand backfill ──────────────────────────────
+# Works across both Fixed and Catbox .strm modes by reading the imdb_id back
+# out of the NFO sidecar (movie.nfo / tvshow.nfo) instead of depending on the
+# Catbox-only virtual_items table.
+
+_NFO_IMDB_RE = re.compile(r'<uniqueid type="imdb"[^>]*>(tt\d+)</uniqueid>')
+
+
+def _read_nfo_imdb(nfo_path: Path) -> str | None:
+    if not nfo_path.exists():
+        return None
+    try:
+        text = nfo_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return None
+    m = _NFO_IMDB_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _existing_subtitle_langs(strm_path: Path) -> list[str]:
+    langs = []
+    for p in strm_path.parent.glob(strm_path.stem + ".*.srt"):
+        parts = p.name.split(".")
+        if len(parts) >= 3:
+            langs.append(parts[-2].lower())
+    return sorted(set(langs))
+
+
+def subtitle_library_status() -> list[dict]:
+    """Scan MEDIA_PATH for every .strm and report which subtitle languages
+    already exist next to it, for the Subtitles admin page."""
+    media_root = Path(MEDIA_PATH)
+    out: list[dict] = []
+
+    movies_dir = media_root / "movies"
+    if movies_dir.is_dir():
+        for folder in sorted(p for p in movies_dir.iterdir() if p.is_dir()):
+            for strm in sorted(folder.glob("*.strm")):
+                m = _YEAR_RE.search(folder.name)
+                out.append({
+                    "title": (_YEAR_RE.sub("", folder.name).replace("()", "").strip()
+                              if m else folder.name),
+                    "year": m.group(1) if m else None,
+                    "media_type": "movie",
+                    "imdb_id": _read_nfo_imdb(strm.with_suffix(".nfo")),
+                    "strm": str(strm.relative_to(media_root)),
+                    "languages": _existing_subtitle_langs(strm),
+                })
+
+    series_dir = media_root / "series"
+    if series_dir.is_dir():
+        for show in sorted(p for p in series_dir.iterdir() if p.is_dir()):
+            show_imdb = _read_nfo_imdb(show / "tvshow.nfo")
+            for season_dir in sorted(p for p in show.iterdir() if p.is_dir()):
+                for strm in sorted(season_dir.glob("*.strm")):
+                    ep = _EP_RE.search(strm.stem)
+                    out.append({
+                        "title": show.name,
+                        "media_type": "series",
+                        "imdb_id": show_imdb,
+                        "season": int(ep.group(1)) if ep else None,
+                        "episode": int(ep.group(2)) if ep else None,
+                        "strm": str(strm.relative_to(media_root)),
+                        "languages": _existing_subtitle_langs(strm),
+                    })
+    return out
+
+
+def force_fetch_subtitles(rel_path: str) -> dict:
+    """Force a (re)search for subtitles on one .strm, trying OpenSubtitles then
+    Podnapisi for whichever configured languages are still missing."""
+    strm = (Path(MEDIA_PATH) / rel_path).resolve()
+    if Path(MEDIA_PATH).resolve() not in strm.parents or not strm.exists():
+        return {"ok": False, "error": "strm not found"}
+
+    rel_parts = strm.relative_to(MEDIA_PATH).parts
+    is_series = rel_parts[0] == "series"
+    season = episode = year = None
+
+    if is_series:
+        show_dir = Path(MEDIA_PATH) / rel_parts[0] / rel_parts[1]
+        title = rel_parts[1]
+        imdb_id = _read_nfo_imdb(show_dir / "tvshow.nfo")
+        ep = _EP_RE.search(strm.stem)
+        if ep:
+            season, episode = int(ep.group(1)), int(ep.group(2))
+        media_type = "series"
+    else:
+        folder = rel_parts[1]
+        m = _YEAR_RE.search(folder)
+        year = int(m.group(1)) if m else None
+        title = _YEAR_RE.sub("", folder).replace("()", "").strip() if m else folder
+        imdb_id = _read_nfo_imdb(strm.with_suffix(".nfo"))
+        media_type = "movie"
+
+    written = 0
+    if imdb_id:
+        try:
+            import subtitles
+            written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode)
+        except Exception as exc:
+            log.debug("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
+    try:
+        import podnapisi
+        written += podnapisi.fetch_for(strm, title, media_type, season=season, episode=episode, year=year)
+    except Exception as exc:
+        log.debug("force_fetch_subtitles: Podnapisi failed for %s: %s", rel_path, exc)
+
+    return {"ok": True, "written": written, "languages": _existing_subtitle_langs(strm)}
+
+
+def backfill_all_subtitles() -> dict:
+    """Run force_fetch_subtitles() for every .strm currently missing at least one
+    configured language. Meant to run in a background thread (network-heavy)."""
+    wanted = settings.get("OPENSUBTITLES_LANGUAGES") or []
+    if isinstance(wanted, str):
+        wanted = [l.strip().lower() for l in wanted.split(",") if l.strip()]
+    wanted = set(wanted)
+
+    checked = 0
+    fetched = 0
+    for item in subtitle_library_status():
+        if wanted and wanted.issubset(set(item["languages"])):
+            continue
+        checked += 1
+        try:
+            result = force_fetch_subtitles(item["strm"])
+            fetched += result.get("written", 0)
+        except Exception as exc:
+            log.warning("backfill_all_subtitles: failed for %s: %s", item["strm"], exc)
+    log.info("backfill_all_subtitles: checked=%d fetched=%d", checked, fetched)
+    return {"checked": checked, "fetched": fetched}
+
+
 _preload_semaphore = threading.Semaphore(3)   # max 3 concurrent preload threads
 _preload_in_flight: set[str] = set()
 _preload_lock = threading.Lock()
