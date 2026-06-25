@@ -86,6 +86,13 @@
     .tab-pane { display: none; }
     .tab-pane.active { display: block; }
 
+    .subtabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+    .subtab-btn { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+                  padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600;
+                  cursor: pointer; transition: all .15s; }
+    .subtab-btn:hover { color: var(--text-bright); border-color: var(--accent); }
+    .subtab-btn.active { background: var(--accent-bg); color: #fff; border-color: var(--accent-bg); }
+
     .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
     .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
             padding: 14px 18px; min-width: 110px; flex: 0 0 auto; }
@@ -651,6 +658,7 @@
     <div id="settings-restart-banner" style="display:none;background:rgba(251,191,36,.1);border-left:3px solid var(--amber);padding:10px 14px;border-radius:6px;font-size:13px;color:var(--amber);margin-bottom:14px">
       ⚠ You changed at least one <b>restart-required</b> setting. Run <code>docker compose restart mycelium</code> after saving for it to take effect.
     </div>
+    <div id="settings-subtabs" class="subtabs"></div>
     <form method="post" action="/ui/settings" id="settings-form">
       <div id="settings-groups"><div class="dim" style="font-size:12px">Loading…</div></div>
       <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
@@ -659,7 +667,7 @@
       </div>
     </form>
 
-    <div class="card" style="margin-top:20px">
+    <div class="card" data-category="automation" style="margin-top:20px">
       <div class="card-title">Radarr / Sonarr bulk import</div>
       <p class="dim" style="font-size:12px;margin-bottom:10px">
         Configure RADARR_URL/SONARR_URL + API keys above, save, then click test → import.
@@ -675,7 +683,7 @@
       <div id="arr-status" class="dim" style="font-size:12px;font-family:monospace"></div>
     </div>
 
-    <div class="card" style="margin-top:16px">
+    <div class="card" data-category="automation" style="margin-top:16px">
       <div class="card-title">Auto-add now</div>
       <p class="dim" style="font-size:12px;margin-bottom:10px">
         Trigger the auto-add scheduler immediately. Pulls all enabled categories
@@ -1157,6 +1165,32 @@
     if (kind === 'bool') return v ? 'true' : 'false';
     return String(v);
   }
+  let activeSettingsCategory = null;
+  function applySettingsCategoryFilter() {
+    document.querySelectorAll('#tab-settings .card[data-category]').forEach(card => {
+      card.style.display = (card.dataset.category === activeSettingsCategory) ? '' : 'none';
+    });
+  }
+  function renderSettingsSubtabs(categories, present) {
+    const bar = document.getElementById('settings-subtabs');
+    bar.innerHTML = '';
+    if (!present.has(activeSettingsCategory)) {
+      activeSettingsCategory = categories.find(c => present.has(c.id))?.id || categories[0]?.id || 'general';
+    }
+    categories.filter(c => present.has(c.id)).forEach(c => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'subtab-btn' + (c.id === activeSettingsCategory ? ' active' : '');
+      btn.textContent = c.title;
+      btn.dataset.cat = c.id;
+      btn.addEventListener('click', () => {
+        activeSettingsCategory = c.id;
+        bar.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.cat === c.id));
+        applySettingsCategoryFilter();
+      });
+      bar.appendChild(btn);
+    });
+  }
   async function refreshSettings() {
     const root = document.getElementById('settings-groups');
     const banner = document.getElementById('settings-restart-banner');
@@ -1217,6 +1251,7 @@
                 document.getElementById('settings-form').dispatchEvent(new Event('input'));
               });
             });
+            card.dataset.category = g.category || 'general';
             root.appendChild(card);
           }
           return; // skip normal rendering for mode group
@@ -1264,8 +1299,12 @@
         });
         body += '</table>';
         card.innerHTML = body;
+        card.dataset.category = g.category || 'general';
         root.appendChild(card);
       });
+      const presentCategories = new Set(d.groups.map(g => g.category || 'general'));
+      renderSettingsSubtabs(d.categories || [], presentCategories);
+      applySettingsCategoryFilter();
       // Live banner: show when a restart-required field changes from initial
       const form = document.getElementById('settings-form');
       // Before submit: remove empty secret fields so they are not sent at all.
