@@ -39,7 +39,6 @@ _BOOL_KEYS = {
     "AUTH_ENABLED",
     "TRUSTED_PROXY_AUTH",
     "LITE_MODE",
-    "SUBLIMINAL_ENABLED",
 }
 _LIST_KEYS = {
     "QUALITY_PREFERENCE",
@@ -47,9 +46,9 @@ _LIST_KEYS = {
     "EXCLUDE_LANGUAGES",
     "OPENSUBTITLES_LANGUAGES",
 }
-# People type a language by whatever name/code they know it under. The APIs
-# we query (OpenSubtitles, subliminal) expect the ISO 639-1 code, so normalize
-# common alternates here, once, for every consumer of OPENSUBTITLES_LANGUAGES.
+# People type a language by whatever name/code they know it under. The OpenSubtitles
+# API expects the ISO 639-1 code, so normalize common alternates here, once, for
+# every consumer of OPENSUBTITLES_LANGUAGES.
 _LANGUAGE_ALIASES = {
     "dutch": "nl", "dut": "nl", "nld": "nl", "ned": "nl",
     "flemish": "nl", "vlaams": "nl",
@@ -116,9 +115,6 @@ HOT_RELOAD = {
     "AUDIO_LANGUAGE_PREFERENCE",
     "EXCLUDE_LANGUAGES",
     "OPENSUBTITLES_LANGUAGES",
-    "OPENSUBTITLES_USERNAME",
-    "OPENSUBTITLES_PASSWORD",
-    "SUBLIMINAL_ENABLED",
     "BLACKLIST_FAIL_THRESHOLD",
     "WEB_PLAYER_MAX_SIZE_GB",
     "NOTIFY_ON_SUCCESS",
@@ -189,8 +185,7 @@ SETTING_GROUPS = [
         "title": "Languages & subtitles",
         "category": "quality",
         "keys": ["AUDIO_LANGUAGE_PREFERENCE", "EXCLUDE_LANGUAGES", "OPENSUBTITLES_LANGUAGES",
-                 "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD",
-                 "SUBLIMINAL_ENABLED"],
+                 "OPENSUBTITLES_API_KEY"],
     },
     {
         "id": "auto",

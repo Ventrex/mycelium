@@ -6,19 +6,16 @@ All notable changes to Mycelium are documented in this file.
 
 ### Added
 
-- **Subliminal subtitle fallback**: multi-provider subtitle search (Addic7ed, TVsubtitles, Gestdown, BSPlayer), free and no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `SUBLIMINAL_ENABLED` (on by default).
 - **Self-hosted Zilean in docker-compose.yml**: `zilean` + `zilean-postgres` services bundled directly in the compose file, behind a `zilean` profile so they only start when opted in (`docker compose --profile zilean up -d`). Set `ZILEAN_URL=http://zilean:8181` to use the bundled instance instead of an external one.
-- **OpenSubtitles account login**: `OPENSUBTITLES_USERNAME`/`OPENSUBTITLES_PASSWORD` (optional) log in for a bearer token instead of using the API key anonymously, raising the daily download quota from 5 (anonymous) to 20 (free account) or 1000 (VIP), no code change needed to upgrade tiers later.
 
 ### Fixed
 
-- **bsplayer log noise**: the subliminal library logged a full traceback at ERROR level on every retry against an unreachable mirror, both from its own provider logger and from its shared error-handling helper (`subliminal.utils`); both are now silenced since `subliminal_fallback.py` already reports the same failure as one clean line. Connect timeout also lowered to 5s.
 - **OpenSubtitles 406 errors hid the real reason**: download failures only logged the generic HTTP status, not OpenSubtitles' own error message (e.g. "daily quota exceeded"); now surfaced in the log line.
 - **Auto-Approve reported success even when nothing was added**: the daily genre-fill job logged "N item(s) queued" and counted it against the per-genre/daily cap based only on whether `processor.process()` raised an exception, not its actual return value, so titles that ended up `wanted`/`failed`/`rate_limited` were silently counted as successes, capping the run early instead of trying more candidates.
 
 ### Removed
 
-- **Podnapisi subtitle provider**: the domain has gone offline (DNS no longer resolves); removed in favor of the subliminal-based fallback above.
+- **Podnapisi subtitle provider**: the domain has gone offline (DNS no longer resolves); removed with no replacement.
 
 ## [0.5.6] - 2026-06-24
 
