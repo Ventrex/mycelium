@@ -371,6 +371,7 @@ def _migrate() -> None:
             ("debrid_provider", "TEXT DEFAULT 'torbox'"),
             ("rd_id", "TEXT"),
             ("spore_tracks", "TEXT"),
+            ("languages", "TEXT"),
         ]:
             if col not in vi_cols:
                 try:
@@ -380,6 +381,9 @@ def _migrate() -> None:
                     log.warning("Migration: could not add virtual_items.%s: %s", col, _e)
 
         req_cols = {r["name"] for r in conn.execute("PRAGMA table_info(requests)")}
+        if "languages" not in req_cols:
+            conn.execute("ALTER TABLE requests ADD COLUMN languages TEXT")
+            log.info("Migration: added requests.languages")
         if "tmdb_id" not in req_cols:
             conn.execute("ALTER TABLE requests ADD COLUMN tmdb_id INTEGER")
             log.info("Migration: added requests.tmdb_id")
@@ -486,13 +490,20 @@ def insert_request(title: str, imdb_id: str, media_type: str, seasons: list[int]
 
 def update_request(row_id: int, status: str, quality: str | None = None,
                    source: str | None = None, info_hash: str | None = None,
-                   error: str | None = None) -> None:
+                   error: str | None = None, languages: str | None = None) -> None:
     with _connect() as conn:
-        conn.execute(
-            """UPDATE requests SET status=?, quality=?, source=?, info_hash=?, error=?,
-               updated_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=?""",
-            (status, quality, source, info_hash, error, row_id),
-        )
+        if languages is not None:
+            conn.execute(
+                """UPDATE requests SET status=?, quality=?, source=?, info_hash=?, error=?,
+                   languages=?, updated_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=?""",
+                (status, quality, source, info_hash, error, languages, row_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE requests SET status=?, quality=?, source=?, info_hash=?, error=?,
+                   updated_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=?""",
+                (status, quality, source, info_hash, error, row_id),
+            )
         conn.commit()
 
 
@@ -907,17 +918,27 @@ def insert_virtual_item(token: str, info_hash: str, magnet: str, title: str,
 
 
 def update_virtual_item_upgrade(token: str, info_hash: str, magnet: str,
-                                 quality: str | None, source: str | None) -> None:
+                                 quality: str | None, source: str | None,
+                                 languages: str | None = None) -> None:
     """Swap in a better torrent for an existing virtual item (upgrade). Clears the
     cached torbox_id and file_id so next playback re-materializes with new hash."""
     with _connect() as conn:
-        conn.execute(
-            """UPDATE virtual_items
-               SET info_hash=?, magnet=?, quality=?, source=?,
-                   torbox_id=NULL, file_id=NULL
-               WHERE token=?""",
-            (info_hash, magnet, quality, source, token),
-        )
+        if languages is not None:
+            conn.execute(
+                """UPDATE virtual_items
+                   SET info_hash=?, magnet=?, quality=?, source=?, languages=?,
+                       torbox_id=NULL, file_id=NULL
+                   WHERE token=?""",
+                (info_hash, magnet, quality, source, languages, token),
+            )
+        else:
+            conn.execute(
+                """UPDATE virtual_items
+                   SET info_hash=?, magnet=?, quality=?, source=?,
+                       torbox_id=NULL, file_id=NULL
+                   WHERE token=?""",
+                (info_hash, magnet, quality, source, token),
+            )
         conn.commit()
 
 
@@ -1130,6 +1151,27 @@ def record_failed_hash(info_hash: str, error: str | None = None) -> None:
                  last_error=COALESCE(excluded.last_error, last_error),
                  last_attempt=strftime('%Y-%m-%d %H:%M:%S','now')""",
             (info_hash, error),
+        )
+        conn.commit()
+
+
+_MANUAL_BLACKLIST_FAIL_COUNT = 9999
+
+
+def blacklist_hash_manually(info_hash: str, reason: str | None = None) -> None:
+    """User-initiated blacklist for a specific release (e.g. wrong audio
+    language on an otherwise-cached release). Forces fail_count above any
+    configured threshold so it's excluded immediately, regardless of how many
+    organic failures it has accumulated."""
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO failed_hashes (info_hash, fail_count, last_error) VALUES (?, ?, ?)
+               ON CONFLICT(info_hash) DO UPDATE SET
+                 fail_count=?,
+                 last_error=excluded.last_error,
+                 last_attempt=strftime('%Y-%m-%d %H:%M:%S','now')""",
+            (info_hash, _MANUAL_BLACKLIST_FAIL_COUNT, reason or "manually blacklisted",
+             _MANUAL_BLACKLIST_FAIL_COUNT),
         )
         conn.commit()
 

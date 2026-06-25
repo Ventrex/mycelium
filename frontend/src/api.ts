@@ -162,6 +162,14 @@ export const api = {
   contentBlacklistRemove: (kind: BlacklistKind, tmdb_id: number) =>
     http<{ status: string }>(`/ui/api/content-blacklist/${kind}/${tmdb_id}`, { method: 'DELETE' }),
 
+  // Per-release blacklist: keep the title, reject just the current release (e.g.
+  // wrong audio language) and force a fresh search for a replacement.
+  blacklistRelease: (token: string, reason?: string) =>
+    http<{ ok: boolean; resolved: boolean; title: string; hint?: string }>(
+      `/ui/api/virtual-items/${token}/blacklist-release`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+
   // Favorite actors (auto-requests their recent/upcoming work)
   favoriteActors: () => http<{ items: FavoriteActor[] }>('/ui/api/favorite-actors'),
   favoriteActorAdd: (tmdb_id: number, name: string, profile_path: string | null) =>

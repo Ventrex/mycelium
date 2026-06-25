@@ -19,6 +19,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 
+import blacklist
 import db
 import settings as _settings
 import torbox
@@ -210,6 +211,29 @@ def materialize(token: str, allow_readd: bool | None = None) -> str | None:
         return url
 
 
+def blacklist_current_release(token: str, reason: str | None = None) -> bool:
+    """Manually blacklist the release currently backing this virtual item (e.g.
+    wrong audio language despite otherwise matching) and clear all cached and
+    persistent state so the next materialize() is forced into a fresh search
+    that skips it. Returns False if the token is unknown or has no hash yet."""
+    item = db.get_virtual_item(token)
+    if not item or not item.get("info_hash"):
+        return False
+    blacklist.blacklist_now(item["info_hash"], reason)
+    if item.get("torbox_id"):
+        try:
+            torbox.delete_torrent(item["torbox_id"])
+        except Exception as exc:
+            log.warning("Catbox: best-effort delete_torrent failed for %s: %s", item["title"], exc)
+    invalidate_url_cache(token)
+    with _fail_cache_lock:
+        _fail_cache.pop(token, None)
+    ckey = _content_key(item)
+    if ckey:
+        db.reset_playability_state(ckey)
+    return True
+
+
 def _rd_get_url(item: dict, rd_id: str) -> str | None:
     """Get a playable URL from RealDebrid for this virtual item."""
     import re as _re
@@ -240,10 +264,19 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
     debrid_provider = (item.get("debrid_provider") or "torbox").lower()
     rematerialized = False
 
+    # A manually-blacklisted current release (e.g. wrong audio language) must never
+    # be resurrected via any of the "still have it" fast paths below  -  force every
+    # one of them to fall straight through to a fresh _search_cached_release(), which
+    # is the only step that actually consults the blacklist.
+    blacklisted_now = blacklist.is_blacklisted(item.get("info_hash") or "")
+    if blacklisted_now:
+        log.info("Catbox: %s current release is blacklisted  -  forcing fresh search",
+                  item["title"])
+
     # ── RealDebrid path ───────────────────────────────────────────────────────
     if debrid_provider == "realdebrid":
         import realdebrid as _rd
-        rd_id = item.get("rd_id")
+        rd_id = None if blacklisted_now else item.get("rd_id")
 
         # Fast path: rd_id still live in RD library
         if rd_id:
@@ -318,7 +351,7 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
                 return None
 
     # ── TorBox path ───────────────────────────────────────────────────────────
-    torbox_id = item["torbox_id"]
+    torbox_id = None if blacklisted_now else item["torbox_id"]
 
     # Fast path: cached torbox_id still live in TorBox.
     if torbox_id:
@@ -328,7 +361,7 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
             rematerialized = True
 
     # Second chance: torrent may still be in TorBox library under its hash.
-    if not torbox_id and item.get("info_hash"):
+    if not torbox_id and item.get("info_hash") and not blacklisted_now:
         existing = torbox.find_by_hash(item["info_hash"])
         if existing and torbox._is_ready(existing):
             torbox_id = existing["id"]
@@ -339,7 +372,7 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
     # Third chance: use the stored magnet to add directly  -  covers both items that
     # previously had a torbox_id (fell out of mylist top-1000) and freshly lazy-
     # registered items (torbox_id=NULL, magnet already selected at request time).
-    if not torbox_id and item.get("magnet") and allow_readd:
+    if not torbox_id and item.get("magnet") and allow_readd and not blacklisted_now:
         try:
             log.info("Catbox: %s adding stored magnet", item["title"])
             added = torbox.add_magnet(item["magnet"], reason="catbox-readd")
@@ -370,7 +403,7 @@ def _materialize_locked(token: str, allow_readd: bool = True) -> str | None:
 
     # Fourth chance: known hash may be cached on RD even if TorBox doesn't have it.
     # This avoids a full Torrentio search for items where Torrentio returns 0 results.
-    if not torbox_id and item.get("info_hash") and allow_readd:
+    if not torbox_id and item.get("info_hash") and allow_readd and not blacklisted_now:
         try:
             import realdebrid as _rd
             if _rd.is_configured():

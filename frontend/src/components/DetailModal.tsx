@@ -160,6 +160,17 @@ export default function DetailModal({
     },
   });
 
+  const [releaseBlacklistMsg, setReleaseBlacklistMsg] = useState<string | null>(null);
+  const releaseBlacklistMutation = useMutation({
+    mutationFn: (reason: string) => api.blacklistRelease(detail!.virtual_item_token!, reason),
+    onSuccess: (res) => {
+      setReleaseBlacklistMsg(
+        res.resolved ? 'Found a different release, .strm updated.' : 'Blacklisted - still searching for a replacement.',
+      );
+      queryClient.invalidateQueries({ queryKey: ['detail', mediaType, tmdbId] });
+    },
+  });
+
   const watchlistMutation = useMutation({
     mutationFn: async () => {
       if (!detail?.imdb_id) throw new Error('no imdb id');
@@ -181,7 +192,7 @@ export default function DetailModal({
 
   // Reset state when modal opens fresh
   useEffect(() => {
-    if (open) { setAddStatus('idle'); setCollectionStatus('idle'); setShowTrailer(false); setShowPlayer(false); setBrowseSeason(null); setPlayEp(null); }
+    if (open) { setAddStatus('idle'); setCollectionStatus('idle'); setShowTrailer(false); setShowPlayer(false); setBrowseSeason(null); setPlayEp(null); setReleaseBlacklistMsg(null); }
   }, [open, tmdbId]);
 
   // Esc to close
@@ -439,7 +450,29 @@ export default function DetailModal({
                   >
                     {detail.is_blacklisted ? '✓ Blacklisted' : '🚫 Blacklist'}
                   </button>
+                  {detail.virtual_item_token && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reason = window.prompt(
+                          'Why is this release wrong? (e.g. "Russian audio")',
+                          '',
+                        );
+                        if (reason === null) return;
+                        setReleaseBlacklistMsg(null);
+                        releaseBlacklistMutation.mutate(reason);
+                      }}
+                      disabled={releaseBlacklistMutation.isPending}
+                      title="Keep this title, but reject the current release (e.g. wrong audio language) and search for a different one"
+                      className="px-4 py-2 rounded-lg border border-border hover:bg-bg text-sm disabled:opacity-50"
+                    >
+                      {releaseBlacklistMutation.isPending ? 'Searching...' : '🔁 Wrong release'}
+                    </button>
+                  )}
                 </div>
+                {releaseBlacklistMsg && (
+                  <div className="mt-2 text-sm text-muted">{releaseBlacklistMsg}</div>
+                )}
 
                 {detail.providers?.flatrate && detail.providers.flatrate.length > 0 && (
                   <div className="mt-5">

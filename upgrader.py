@@ -30,6 +30,42 @@ def _quality_score(q: str | None) -> int:
     return _QUALITY_RANK.get((q or "?").lower(), 0)
 
 
+def _languages_str(langs: tuple[str, ...]) -> str:
+    return ",".join(langs)
+
+
+def _effective_languages(langs: tuple[str, ...]) -> set[str]:
+    """Untagged releases are almost always plain English-audio scene releases,
+    so treat "no language marker detected" as implicit English. That makes it
+    comparable to a release that's explicitly tagged."""
+    return set(langs) if langs else {"en"}
+
+
+def _languages_compatible(current: tuple[str, ...], candidate: tuple[str, ...]) -> bool:
+    """True if swapping in `candidate` wouldn't change the audio language we're
+    currently getting. "multi" (dual/multi-audio) always carries the original
+    track alongside, so it's compatible with anything."""
+    cur = _effective_languages(current)
+    cand = _effective_languages(candidate)
+    if "multi" in cur or "multi" in cand:
+        return True
+    return bool(cur & cand)
+
+
+def _current_languages(stored: str | None, candidates: list, current_hash: str) -> tuple[str, ...]:
+    """Languages of the release currently in use. Prefers the value persisted
+    on the last (initial or previous-upgrade) registration; falls back to
+    matching the current hash against the freshly fetched candidates when
+    nothing has been persisted yet (e.g. items added before this existed)."""
+    if stored is not None:
+        return tuple(s for s in stored.split(",") if s)
+    current_hash = (current_hash or "").lower()
+    if not current_hash:
+        return ()
+    match = next((c for c in candidates if c.info_hash.lower() == current_hash), None)
+    return match.languages if match else ()
+
+
 def _fetch_movie_candidates(imdb_id: str) -> list:
     if _settings.get("ZILEAN_ENABLED", False):
         streams = zilean.fetch_streams(imdb_id)
@@ -50,8 +86,11 @@ def _fetch_season_candidates(imdb_id: str, season: int) -> list:
     return torrentio.rank_streams(streams, prefer_season_pack=True)
 
 
-def _better_cached(candidates: list, current_quality: str, current_hash: str) -> object | None:
-    """Return the best cached candidate strictly better than current_quality."""
+def _better_cached(candidates: list, current_quality: str, current_hash: str,
+                    current_languages: tuple[str, ...] = ()) -> object | None:
+    """Return the best cached candidate strictly better than current_quality,
+    skipping any candidate whose audio language wouldn't match what's already
+    playing (e.g. a 4K release that's only dubbed in a different language)."""
     if not candidates:
         return None
     cached = torbox.check_cached([c.info_hash for c in candidates[:20]])
@@ -61,8 +100,13 @@ def _better_cached(candidates: list, current_quality: str, current_hash: str) ->
             continue
         if c.info_hash.lower() == (current_hash or "").lower():
             continue
-        if _quality_score(c.quality) > current_score:
-            return c
+        if _quality_score(c.quality) <= current_score:
+            continue
+        if not _languages_compatible(current_languages, c.languages):
+            log.info("Upgrade candidate %s rejected: language mismatch (current=%s, candidate=%s)",
+                      c.name, current_languages or "?", c.languages or "?")
+            continue
+        return c
     return None
 
 
@@ -82,19 +126,29 @@ def _run_auto_upgrade_catbox() -> int:
             hashes = [c.info_hash for c in candidates[:20]]
             cached = debrid.check_cached_multi(hashes).get("torbox", set())
             current_score = _quality_score(item.get("quality"))
-            better = next(
-                (c for c in candidates
-                 if c.info_hash in cached
-                 and c.info_hash.lower() != (item.get("info_hash") or "").lower()
-                 and _quality_score(c.quality) > current_score),
-                None,
-            )
+            current_languages = _current_languages(item.get("languages"), candidates,
+                                                     item.get("info_hash") or "")
+            better = None
+            for c in candidates:
+                if c.info_hash not in cached:
+                    continue
+                if c.info_hash.lower() == (item.get("info_hash") or "").lower():
+                    continue
+                if _quality_score(c.quality) <= current_score:
+                    continue
+                if not _languages_compatible(current_languages, c.languages):
+                    log.info("Catbox upgrade candidate %s rejected for %s: language mismatch "
+                              "(current=%s, candidate=%s)",
+                              c.name, item["title"], current_languages or "?", c.languages or "?")
+                    continue
+                better = c
+                break
             if not better:
                 continue
             log.info("Catbox upgrade: %s  %s → %s", item["title"], item.get("quality"), better.quality)
             source = better.name.split()[0] if better.name else None
             db.update_virtual_item_upgrade(item["token"], better.info_hash, better.magnet,
-                                            better.quality, source)
+                                            better.quality, source, languages=_languages_str(better.languages))
             catbox.invalidate_url_cache(item["token"])
             db.log_activity("upgraded", item["title"],
                             f"{item.get('quality')} → {better.quality}", True)
@@ -122,7 +176,9 @@ def run_auto_upgrade() -> int:
             continue
         try:
             candidates = _fetch_movie_candidates(row["imdb_id"])
-            better = _better_cached(candidates, row.get("quality") or "?", row["info_hash"] or "")
+            current_languages = _current_languages(row.get("languages"), candidates, row["info_hash"] or "")
+            better = _better_cached(candidates, row.get("quality") or "?", row["info_hash"] or "",
+                                    current_languages)
             if not better:
                 continue
             log.info("Upgrade candidate for %s: %s → %s", row["title"], row.get("quality"), better.quality)
@@ -132,7 +188,8 @@ def run_auto_upgrade() -> int:
                 continue
             strm_generator.create_strm_for_torrent(item["id"], row["title"], "movie")
             db.update_request(row["id"], "success", quality=better.quality,
-                              source=better.name.split()[0], info_hash=better.info_hash)
+                              source=better.name.split()[0], info_hash=better.info_hash,
+                              languages=_languages_str(better.languages))
             db.log_activity("upgraded", row["title"],
                             f"{row.get('quality')} → {better.quality}", True)
             strm_generator._cache_cdn_url(better.info_hash, item, row["title"])

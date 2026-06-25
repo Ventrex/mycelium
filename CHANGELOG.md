@@ -7,11 +7,16 @@ All notable changes to Mycelium are documented in this file.
 ### Added
 
 - **Self-hosted Zilean in docker-compose.yml**: `zilean` + `zilean-postgres` services bundled directly in the compose file, behind a `zilean` profile so they only start when opted in (`docker compose --profile zilean up -d`). Set `ZILEAN_URL=http://zilean:8181` to use the bundled instance instead of an external one.
+- **Independent Auto-Approve daily caps for movies and series**: `AUTO_APPROVE_DAILY_LIMIT_MOVIE` / `AUTO_APPROVE_DAILY_LIMIT_TV` (both default 100) replace the single shared `AUTO_APPROVE_DAILY_LIMIT`, so an exhausted movie quota never starves series (or vice versa). Both are hot-reloadable from Settings.
+- **Per-release blacklist**: a "Wrong release" button on the detail view for any movie already in the library lets you reject just the current release (e.g. 4K but Russian audio) without removing the title - the release is blacklisted, its TorBox torrent is dropped, and a fresh search for a different release runs immediately.
+- **Audio language preserved on auto-upgrade**: the resolution auto-upgrade job no longer swaps in a higher-quality release whose audio language doesn't match what's currently playing (untagged releases are treated as English; multi-audio releases are always compatible). Fixes a 1080p English release silently being "upgraded" to a 4K release dubbed in another language.
 
 ### Fixed
 
 - **OpenSubtitles 406 errors hid the real reason**: download failures only logged the generic HTTP status, not OpenSubtitles' own error message (e.g. "daily quota exceeded"); now surfaced in the log line.
 - **Auto-Approve reported success even when nothing was added**: the daily genre-fill job logged "N item(s) queued" and counted it against the per-genre/daily cap based only on whether `processor.process()` raised an exception, not its actual return value, so titles that ended up `wanted`/`failed`/`rate_limited` were silently counted as successes, capping the run early instead of trying more candidates.
+- **Jellyfin library refresh spammed on every new .strm**: every new request, upgrade, or cleanup pass triggered its own `/Library/Refresh` call regardless of whether one had just run or Jellyfin was already mid-scan. Refreshes are now debounced (coalesced within a 60s window) and skipped entirely while Jellyfin reports a scan already in progress.
+- **Hourly self-heal only logged, never repaired**: the hourly `.strm` health sample warned when a chunk of probed files were dead but left the actual fix to the next scheduled (daily) cleanup. It now triggers a cleanup pass immediately for Fixed-mode CDN links, and re-resolves the worst-degraded catbox items directly using their tracked failure history.
 
 ### Removed
 

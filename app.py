@@ -1480,6 +1480,29 @@ def ui_api_re_resolve(token: str):
                    hint="check logs  -  re-resolve attempted but no URL returned")
 
 
+@app.post("/ui/api/virtual-items/<token>/blacklist-release")
+@_csrf.exempt
+def ui_api_blacklist_release(token: str):
+    """Blacklist the specific release currently backing this virtual item (e.g.
+    wrong audio language) and immediately force a fresh search for a replacement,
+    keeping the title/.strm in place."""
+    reason = (request.get_json(silent=True) or {}).get("reason") or request.form.get("reason")
+    if not catbox.blacklist_current_release(token, reason):
+        return jsonify(error="unknown token or no release to blacklist"), 404
+    item = db.get_virtual_item(token)
+    result: dict = {}
+    def _try():
+        url = catbox.materialize(token, allow_readd=True)
+        result["url"] = url
+    t = threading.Thread(target=_try, daemon=True)
+    t.start()
+    t.join(timeout=50)
+    if result.get("url"):
+        return jsonify(ok=True, resolved=True, title=item["title"])
+    return jsonify(ok=True, resolved=False, title=item["title"],
+                   hint="check logs  -  blacklisted but no replacement release found yet")
+
+
 @app.get("/ui/api/playability-state")
 def ui_api_playability_state():
     """Return degraded items with 3+ consecutive failures."""
@@ -1956,6 +1979,10 @@ def ui_api_discover_details():
         vi = db.get_virtual_items_by_imdb(imdb_id)
         if vi:
             detail["library_status"] = "available"
+            if media == "movie":
+                detail["virtual_item_token"] = vi[0]["token"]
+                detail["info_hash"] = vi[0]["info_hash"]
+                detail["release_quality"] = vi[0]["quality"]
         else:
             with db._connect() as conn:
                 row = conn.execute(
