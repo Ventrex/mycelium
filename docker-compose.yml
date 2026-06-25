@@ -32,6 +32,24 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Amsterdam
+    volumes:
+      - ./apps/jellyfin:/config
+      - ./data/media/movies:/mnt/venflix/movies:rw
+      - ./data/media/series:/mnt/venflix/series:rw
+      - ./data/media:/mnt/media:rw
+    ports:
+      - "8096:8096"
+      - "7359:7359/udp"
+      - "1900:1900/udp"
+
   # Self-hosted hash index (DebridMediaManager-style), tried before Torrentio
   # when ZILEAN_ENABLED=true. Set ZILEAN_URL=http://zilean:8181 in .env to use
   # this bundled instance instead of an external one. Behind a profile so it
@@ -80,24 +98,63 @@ services:
       timeout: 5s
       retries: 5
 
-  # ════════════════════════════════════════════════════
-  jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
-    container_name: jellyfin
+  # Bazarr (+ Radarr/Sonarr, required for Bazarr to know what's in the
+  # library) as an alternative subtitle source to subliminal_fallback.py.
+  # Run Radarr/Sonarr in metadata-only mode: add the root folders below,
+  # but skip adding indexers/a download client, Mycelium already handles
+  # fetching. Then point Bazarr at both. Opt-in, behind a profile:
+  #   docker compose --profile bazarr up -d
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: mycelium-radarr
     restart: unless-stopped
+    profiles:
+      - bazarr
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Europe/Amsterdam
+      - TZ=Etc/UTC
     volumes:
-      - ./apps/jellyfin:/config
-      - ./data/media/movies:/mnt/venflix/movies:rw
-      - ./data/media/series:/mnt/venflix/series:rw
-      - ./data/media:/mnt/media:rw
+      - ./apps/radarr:/config
+      - ./data/media/movies:/movies
     ports:
-      - "8096:8096"
-      - "7359:7359/udp"
-      - "1900:1900/udp"
+      - "7878:7878"
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: mycelium-sonarr
+    restart: unless-stopped
+    profiles:
+      - bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./apps/sonarr:/config
+      - ./data/media/series:/tv
+    ports:
+      - "8989:8989"
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: mycelium-bazarr
+    restart: unless-stopped
+    profiles:
+      - bazarr
+    depends_on:
+      - radarr
+      - sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./apps/bazarr:/config
+      - ./data/media/movies:/movies
+      - ./data/media/series:/tv
+    ports:
+      - "6767:6767"
 
 volumes:
   zilean_data:

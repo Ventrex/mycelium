@@ -27,7 +27,13 @@ import settings as _settings
 log = logging.getLogger(__name__)
 
 _PROVIDERS = ["addic7ed", "tvsubtitles", "gestdown", "bsplayer"]
-_PROVIDER_CONFIGS = {"addic7ed": {"allow_searches": True}}
+_PROVIDER_CONFIGS = {"addic7ed": {"allow_searches": True}, "bsplayer": {"timeout": 5}}
+
+# bsplayer logs a full traceback at ERROR level on every retry against an
+# unreachable mirror (5 retries per video by default); _download() below
+# already turns that into one clean warning/debug line, so silence the
+# library's own logger to keep it out of the admin Logs tab.
+logging.getLogger("subliminal.providers.bsplayer").setLevel(logging.CRITICAL)
 
 
 def _enabled() -> bool:
