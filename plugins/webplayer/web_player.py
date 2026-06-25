@@ -15,6 +15,7 @@ import requests.exceptions as _req_exc
 
 import db
 import health_cache
+import podnapisi
 import settings as _settings
 import subtitles as _subtitles
 import torbox
@@ -1101,63 +1102,95 @@ def _subtitles_task(cdn_url: str, file_info: dict,
 def _fetch_external_subtitles(imdb_id: str, media_type: str,
                                season: int | None, episode: int | None,
                                tmp_dir: Path) -> None:
-    """Download subtitles from OpenSubtitles and convert to WebVTT."""
-    api_key = _settings.get("OPENSUBTITLES_API_KEY", "")
-    if not api_key:
-        return
-
+    """Download subtitles from OpenSubtitles, falling back to Podnapisi
+    (free, no API key) for any language OpenSubtitles didn't cover."""
     langs = _settings.get("OPENSUBTITLES_LANGUAGES") or []
     if isinstance(langs, str):
         langs = [l.strip() for l in langs.split(",") if l.strip()]
     if not langs:
         langs = ["en"]
 
+    api_key = _settings.get("OPENSUBTITLES_API_KEY", "")
+    podnapisi_enabled = _settings.get("PODNAPISI_ENABLED", True)
+    title = podnapisi.title_for_imdb(imdb_id) if podnapisi_enabled else None
+
     for lang in langs:
         vtt_path = tmp_dir / f"sub_ext_{lang}.vtt"
         if vtt_path.exists():
             continue
-
-        results = _subtitles._search(imdb_id, season, episode, lang)
-        if not results:
-            log.info("web_player: no external subtitles for %s lang=%s", imdb_id, lang)
+        if api_key and _fetch_opensubtitles_vtt(imdb_id, season, episode, lang, vtt_path, tmp_dir):
             continue
+        if podnapisi_enabled and title:
+            _fetch_podnapisi_vtt(title, media_type, season, episode, lang, vtt_path, tmp_dir)
 
-        top   = results[0]
-        files = (top.get("attributes") or {}).get("files") or []
-        if not files:
-            continue
-        file_id = files[0].get("file_id")
-        if not file_id:
-            continue
 
-        url = _subtitles._request_download_url(file_id)
-        if not url:
-            continue
+def _fetch_opensubtitles_vtt(imdb_id: str, season: int | None, episode: int | None,
+                              lang: str, vtt_path: Path, tmp_dir: Path) -> bool:
+    results = _subtitles._search(imdb_id, season, episode, lang)
+    if not results:
+        log.info("web_player: no OpenSubtitles subtitles for %s lang=%s", imdb_id, lang)
+        return False
 
-        try:
-            resp = req_lib.get(url, timeout=30)
-            resp.raise_for_status()
-        except Exception as exc:
-            log.warning("web_player: subtitle download failed lang=%s: %s", lang, exc)
-            continue
+    top   = results[0]
+    files = (top.get("attributes") or {}).get("files") or []
+    if not files:
+        return False
+    file_id = files[0].get("file_id")
+    if not file_id:
+        return False
 
-        # Write raw file, then let ffmpeg normalise to WebVTT.
-        raw_path = tmp_dir / f"sub_ext_{lang}.raw"
-        raw_path.write_bytes(resp.content)
-        try:
-            result = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(raw_path), str(vtt_path)],
-                capture_output=True, timeout=30,
-            )
-            if result.returncode == 0:
-                log.info("web_player: external subtitle saved lang=%s token=%s", lang, tmp_dir.name)
-            else:
-                log.warning("web_player: ffmpeg vtt conversion failed lang=%s: %s",
-                            lang, result.stderr[-300:])
-        except Exception as exc:
-            log.warning("web_player: vtt conversion error lang=%s: %s", lang, exc)
-        finally:
-            raw_path.unlink(missing_ok=True)
+    url = _subtitles._request_download_url(file_id)
+    if not url:
+        return False
+
+    try:
+        resp = req_lib.get(url, timeout=30)
+        resp.raise_for_status()
+    except Exception as exc:
+        log.warning("web_player: OpenSubtitles download failed lang=%s: %s", lang, exc)
+        return False
+
+    return _convert_to_vtt(resp.content, vtt_path, lang, tmp_dir, "OpenSubtitles")
+
+
+def _fetch_podnapisi_vtt(title: str, media_type: str, season: int | None, episode: int | None,
+                          lang: str, vtt_path: Path, tmp_dir: Path) -> bool:
+    is_series = media_type == "series"
+    results = podnapisi._search(title, season if is_series else None,
+                                 episode if is_series else None, lang)
+    if not results:
+        log.info("web_player: no Podnapisi subtitles for %r lang=%s", title, lang)
+        return False
+    pid = results[0].get("id")
+    if not pid:
+        return False
+    content = podnapisi._download(str(pid))
+    if not content:
+        return False
+    return _convert_to_vtt(content, vtt_path, lang, tmp_dir, "Podnapisi")
+
+
+def _convert_to_vtt(raw_bytes: bytes, vtt_path: Path, lang: str, tmp_dir: Path, source: str) -> bool:
+    """Write raw subtitle bytes, then let ffmpeg normalise to WebVTT."""
+    raw_path = tmp_dir / f"sub_ext_{lang}.raw"
+    raw_path.write_bytes(raw_bytes)
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(raw_path), str(vtt_path)],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode == 0:
+            log.info("web_player: external subtitle saved (%s) lang=%s token=%s",
+                      source, lang, tmp_dir.name)
+            return True
+        log.warning("web_player: ffmpeg vtt conversion failed lang=%s: %s",
+                     lang, result.stderr[-300:])
+        return False
+    except Exception as exc:
+        log.warning("web_player: vtt conversion error lang=%s: %s", lang, exc)
+        return False
+    finally:
+        raw_path.unlink(missing_ok=True)
 
 
 def list_subtitles(token: str) -> list[dict]:

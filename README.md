@@ -287,6 +287,7 @@ Open **`http://<your-host>:8088`** - the setup wizard walks you through everythi
 - [RealDebrid](https://real-debrid.com) - fallback debrid when TorBox misses
 - [Jellyseerr](https://jellyseerr.dev) / [Overseerr](https://overseerr.dev) - request portal via webhook
 - [OpenSubtitles](https://www.opensubtitles.com/en/consumers) - auto subtitle download
+- Podnapisi - free, no API key, auto subtitle download fallback (on by default)
 
 ---
 
@@ -364,6 +365,7 @@ Full reference: [`.env.example`](.env.example). Key variables:
 | `DISCORD_WEBHOOK_URL` | *(empty)* | Optional notifications |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty)* | Optional notifications |
 | `OPENSUBTITLES_API_KEY` | *(empty)* | Auto subtitle download |
+| `PODNAPISI_ENABLED` | `true` | Free, no API key, subtitle download fallback |
 | `METRICS_TOKEN` | *(empty)* | Bearer token for `/metrics` scraping |
 
 ---

@@ -2,6 +2,12 @@
 
 All notable changes to Mycelium are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Podnapisi subtitle provider**: free, no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `PODNAPISI_ENABLED` (on by default).
+
 ## [0.5.6] - 2026-06-24
 
 ### Added

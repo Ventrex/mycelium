@@ -505,6 +505,14 @@ def get_request_by_imdb(imdb_id: str) -> dict | None:
         return dict(row) if row else None
 
 
+def get_monitored_series_by_imdb(imdb_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM monitored_series WHERE imdb_id=? LIMIT 1", (imdb_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_imdb_ids_by_tmdb(tmdb_id: int | str) -> set[str]:
     """Resolve every known imdb_id for a tmdb_id from the requests and
     monitored_series tables. Used to fully purge a blacklisted title."""
