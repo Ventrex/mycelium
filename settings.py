@@ -136,16 +136,19 @@ HOT_RELOAD = {
     "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
 }
 
-# Logical groups for the Settings UI tab.
+# Logical groups for the Settings UI tab. "category" buckets groups under the
+# top-level sub-tabs in the Settings pane so the page isn't one long scroll.
 SETTING_GROUPS = [
     {
         "id": "mode",
         "title": "Deployment mode (restart required)",
+        "category": "general",
         "keys": ["LITE_MODE"],
     },
     {
         "id": "connections",
         "title": "Connections",
+        "category": "general",
         "keys": [
             "TORBOX_API_KEY", "TORBOX_BASE_URL",
             "JELLYFIN_URL", "JELLYFIN_API_KEY",
@@ -159,11 +162,13 @@ SETTING_GROUPS = [
     {
         "id": "catbox",
         "title": "Catbox (lazy materialization)",
+        "category": "general",
         "keys": ["CATBOX_MODE", "CATBOX_LAZY_ADD", "CATBOX_PRELOAD", "CATBOX_HOST", "CATBOX_IDLE_MINUTES", "CATBOX_GC_INTERVAL_MINUTES"],
     },
     {
         "id": "quality",
         "title": "Quality & filtering",
+        "category": "quality",
         "keys": [
             "QUALITY_PREFERENCE", "ALLOW_4K", "EXCLUDE_REMUX", "EXCLUDE_BLURAY", "EXCLUDE_CAM",
             "PREFER_WEBDL", "PREFER_HEVC", "MIN_SEEDERS", "MAX_SIZE_GB", "STRICT_NO_CAM",
@@ -173,12 +178,14 @@ SETTING_GROUPS = [
     {
         "id": "languages",
         "title": "Languages & subtitles",
+        "category": "quality",
         "keys": ["AUDIO_LANGUAGE_PREFERENCE", "EXCLUDE_LANGUAGES", "OPENSUBTITLES_LANGUAGES",
                  "OPENSUBTITLES_API_KEY", "PODNAPISI_ENABLED"],
     },
     {
         "id": "auto",
         "title": "Automation",
+        "category": "automation",
         "keys": [
             "AUTO_UPGRADE_ENABLED", "AUTO_UPGRADE_INTERVAL_HOURS",
             "SEASON_PACK_CONSOLIDATION_ENABLED", "SEASON_PACK_CHECK_INTERVAL_HOURS",
@@ -189,6 +196,7 @@ SETTING_GROUPS = [
     {
         "id": "auto_add",
         "title": "Auto-add categories",
+        "category": "automation",
         "keys": [
             "TRENDING_PRECACHE_COUNT", "TRENDING_TV_COUNT",
             "POPULAR_MOVIE_COUNT", "POPULAR_TV_COUNT",
@@ -199,11 +207,13 @@ SETTING_GROUPS = [
     {
         "id": "arr_import",
         "title": "Radarr / Sonarr import",
+        "category": "automation",
         "keys": ["RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY"],
     },
     {
         "id": "security",
         "title": "Authentication",
+        "category": "security",
         "keys": [
             "AUTH_ENABLED", "AUTH_USERNAME",
             "TRUSTED_PROXY_AUTH", "TRUSTED_PROXY_USER_HEADER",
@@ -215,6 +225,7 @@ SETTING_GROUPS = [
     {
         "id": "notifications",
         "title": "Notifications",
+        "category": "security",
         "keys": [
             "NOTIFY_ON_SUCCESS", "NOTIFY_ON_FAILURE",
             "DISCORD_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
@@ -223,6 +234,7 @@ SETTING_GROUPS = [
     {
         "id": "intervals",
         "title": "Schedulers (restart required)",
+        "category": "advanced",
         "keys": [
             "STRM_GENERATOR_INTERVAL_HOURS", "CLEANUP_INTERVAL_HOURS",
             "MONITOR_INTERVAL_HOURS", "MOVIE_SYNC_INTERVAL_MINUTES",
@@ -230,6 +242,15 @@ SETTING_GROUPS = [
             "RETRY_QUEUE_INTERVAL_MINUTES", "CONTINUE_WATCHING_INTERVAL_MINUTES",
         ],
     },
+]
+
+# Display labels + order for the Settings sub-tabs, keyed by group "category".
+SETTING_CATEGORIES = [
+    {"id": "general", "title": "General"},
+    {"id": "quality", "title": "Quality & Subtitles"},
+    {"id": "automation", "title": "Automation"},
+    {"id": "security", "title": "Security & Notifications"},
+    {"id": "advanced", "title": "Advanced"},
 ]
 
 
@@ -302,5 +323,10 @@ def all_for_ui() -> list[dict]:
                 "overridden": override_raw is not None,
                 "hot_reload": key in HOT_RELOAD,
             })
-        out.append({"id": group["id"], "title": group["title"], "items": items})
+        out.append({
+            "id": group["id"],
+            "title": group["title"],
+            "category": group.get("category", "general"),
+            "items": items,
+        })
     return out

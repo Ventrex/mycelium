@@ -1567,7 +1567,11 @@ def ui_continue_watching():
 @app.get("/ui/api/settings")
 def ui_api_settings():
     import settings
-    return jsonify(groups=settings.all_for_ui(), hot_reload=list(settings.HOT_RELOAD))
+    return jsonify(
+        groups=settings.all_for_ui(),
+        categories=settings.SETTING_CATEGORIES,
+        hot_reload=list(settings.HOT_RELOAD),
+    )
 
 
 @app.post("/ui/settings")
