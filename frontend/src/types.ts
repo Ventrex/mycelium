@@ -211,3 +211,14 @@ export interface WantedEpisode {
   first_attempted: string | null;
   last_attempted: string | null;
 }
+
+export interface SubtitleItem {
+  title: string;
+  year?: string | null;
+  media_type: 'movie' | 'series';
+  imdb_id: string | null;
+  season?: number | null;
+  episode?: number | null;
+  strm: string;
+  languages: string[];
+}

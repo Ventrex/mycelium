@@ -1020,6 +1020,34 @@ def ui_api_series_backfill():
     return jsonify(ok=True, started="series_backfill")
 
 
+@app.get("/ui/api/subtitles")
+def ui_api_subtitles():
+    """Subtitle language coverage for every .strm in the library."""
+    items = strm_generator.subtitle_library_status()
+    wanted = _settings_mod.get("OPENSUBTITLES_LANGUAGES") or []
+    if isinstance(wanted, str):
+        wanted = [l.strip() for l in wanted.split(",") if l.strip()]
+    return jsonify(items=items, wanted_languages=wanted)
+
+
+@app.post("/ui/api/subtitles/search")
+def ui_api_subtitles_search():
+    """Force a (re)search for subtitles on one .strm file."""
+    rel = (request.json or {}).get("strm")
+    if not rel:
+        return jsonify(ok=False, error="missing strm"), 400
+    result = strm_generator.force_fetch_subtitles(rel)
+    return jsonify(**result)
+
+
+@app.post("/ui/api/subtitles/search-all")
+@_csrf.exempt
+def ui_api_subtitles_search_all():
+    """Force-search subtitles for every .strm still missing a configured language (background)."""
+    threading.Thread(target=strm_generator.backfill_all_subtitles, name="subtitle-backfill", daemon=True).start()
+    return jsonify(ok=True, started="subtitle_backfill")
+
+
 # ── New JSON APIs ─────────────────────────────────────────────────────────────
 
 @app.get("/ui/api/health")
