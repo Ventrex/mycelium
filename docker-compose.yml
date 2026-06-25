@@ -80,6 +80,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # ════════════════════════════════════════════════════
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Amsterdam
+    volumes:
+      - ./apps/jellyfin:/config
+      - ./data/media/movies:/mnt/venflix/movies:rw
+      - ./data/media/series:/mnt/venflix/series:rw
+      - ./data/media:/mnt/media:rw
+    ports:
+      - "8096:8096"
+      - "7359:7359/udp"
+      - "1900:1900/udp"
+
 volumes:
   zilean_data:
   zilean_pgdata:
