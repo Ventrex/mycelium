@@ -1,7 +1,7 @@
 import logging
 from collections import deque
 
-_buffer: deque[str] = deque(maxlen=500)
+_buffer: deque[str] = deque(maxlen=1000)
 
 
 class _BufferHandler(logging.Handler):

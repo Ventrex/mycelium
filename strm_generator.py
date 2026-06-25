@@ -585,19 +585,24 @@ def force_fetch_subtitles(rel_path: str) -> dict:
         imdb_id = _read_nfo_imdb(strm.with_suffix(".nfo"))
         media_type = "movie"
 
+    log.info("Subtitle search started: %s", rel_path)
     written = 0
     if imdb_id:
         try:
             import subtitles
-            written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode)
+            written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode, verbose=True)
         except Exception as exc:
-            log.debug("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
+            log.warning("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
+    else:
+        log.warning("Subtitle search: no imdb_id found for %s (check .nfo), OpenSubtitles skipped", rel_path)
     try:
         import podnapisi
-        written += podnapisi.fetch_for(strm, title, media_type, season=season, episode=episode, year=year)
+        written += podnapisi.fetch_for(strm, title, media_type, season=season, episode=episode, year=year, verbose=True)
     except Exception as exc:
-        log.debug("force_fetch_subtitles: Podnapisi failed for %s: %s", rel_path, exc)
+        log.warning("force_fetch_subtitles: Podnapisi failed for %s: %s", rel_path, exc)
 
+    log.info("Subtitle search finished: %s (written=%d, languages=%s)",
+              rel_path, written, ",".join(_existing_subtitle_langs(strm)) or "none")
     return {"ok": True, "written": written, "languages": _existing_subtitle_langs(strm)}
 
 

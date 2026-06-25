@@ -161,10 +161,22 @@
     .section-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
     .log-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .log-filters { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .log-level-btn { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+                     padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700;
+                     cursor: pointer; transition: all .15s; text-transform: uppercase; letter-spacing: .03em; }
+    .log-level-btn:hover { color: var(--text-bright); border-color: var(--accent); }
+    .log-level-btn.active { background: var(--accent-bg); color: #fff; border-color: var(--accent-bg); }
+    #log-search { width: 240px; margin-left: auto; }
     #log-box { background: #090d14; border: 1px solid var(--panel2); border-radius: 8px; padding: 14px 16px;
                font-family: monospace; font-size: 11px; line-height: 1.6; max-height: 500px;
-               overflow-y: auto; white-space: pre-wrap; color: #7dd3fc; }
+               overflow-y: auto; color: #7dd3fc; }
     [data-theme="light"] #log-box { background: #1e293b; color: #7dd3fc; }
+    .log-line { white-space: pre-wrap; padding: 1px 0; }
+    .log-line.lvl-ERROR   { color: var(--red); }
+    .log-line.lvl-WARNING { color: var(--amber); }
+    .log-line.lvl-DEBUG   { color: var(--dim); }
+    .log-line mark { background: var(--accent-bg); color: #fff; border-radius: 2px; }
     #log-status { font-size: 11px; color: var(--dim); }
 
     .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex;
@@ -776,6 +788,10 @@
     <div class="log-controls">
       <button class="btn btn-sm btn-secondary" onclick="toggleAuto()" id="log-toggle">Auto: ON</button>
       <span id="log-status">Loading…</span>
+    </div>
+    <div class="log-filters">
+      <div id="log-level-bar" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <input type="search" id="log-search" placeholder="Search logs…">
     </div>
     <div id="log-box">Loading…</div>
   </div>
@@ -1661,19 +1677,62 @@
 
   // ── Logs ──
   let autoRefresh = true, logTimer = null;
+  let rawLogLines = [];
+  let activeLogLevel = 'ALL';
+  const LOG_LEVELS = ['ALL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'];
+  const LOG_LINE_RE = /^\S+ \S+ (DEBUG|INFO|WARNING|ERROR|CRITICAL)\s/;
+
   function toggleAuto() {
     autoRefresh = !autoRefresh;
     document.getElementById('log-toggle').textContent = 'Auto: ' + (autoRefresh ? 'ON' : 'OFF');
     if (autoRefresh) scheduleLogs(); else clearTimeout(logTimer);
   }
+  function logLevelOf(line) {
+    const m = line.match(LOG_LINE_RE);
+    return m ? (m[1] === 'CRITICAL' ? 'ERROR' : m[1]) : 'INFO';
+  }
+  function escapeLogHtml(s) {
+    return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  }
+  function renderLogLevelBar() {
+    const counts = { ALL: rawLogLines.length, ERROR: 0, WARNING: 0, INFO: 0, DEBUG: 0 };
+    rawLogLines.forEach(l => { const lvl = logLevelOf(l); counts[lvl] = (counts[lvl] || 0) + 1; });
+    const bar = document.getElementById('log-level-bar');
+    bar.innerHTML = '';
+    LOG_LEVELS.forEach(lvl => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'log-level-btn' + (lvl === activeLogLevel ? ' active' : '');
+      btn.textContent = lvl + ' (' + (counts[lvl] || 0) + ')';
+      btn.addEventListener('click', () => { activeLogLevel = lvl; renderLogLevelBar(); renderLogLines(); });
+      bar.appendChild(btn);
+    });
+  }
+  function renderLogLines() {
+    const box = document.getElementById('log-box');
+    const atBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 40;
+    const q = document.getElementById('log-search').value.trim();
+    let lines = rawLogLines;
+    if (activeLogLevel !== 'ALL') lines = lines.filter(l => logLevelOf(l) === activeLogLevel);
+    if (q) lines = lines.filter(l => l.toLowerCase().includes(q.toLowerCase()));
+    box.innerHTML = lines.map(l => {
+      let html = escapeLogHtml(l);
+      if (q) {
+        const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig');
+        html = html.replace(re, m => '<mark>' + m + '</mark>');
+      }
+      return '<div class="log-line lvl-' + logLevelOf(l) + '">' + html + '</div>';
+    }).join('') || '<div class="dim">No matching log lines.</div>';
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+  document.getElementById('log-search').addEventListener('input', renderLogLines);
   async function fetchLogs() {
     try {
-      const r = await fetch('/ui/logs');
+      const r = await fetch('/ui/logs?n=500');
       const d = await r.json();
-      const box = document.getElementById('log-box');
-      const atBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 40;
-      box.textContent = d.lines.join('\n');
-      if (atBottom) box.scrollTop = box.scrollHeight;
+      rawLogLines = d.lines;
+      renderLogLevelBar();
+      renderLogLines();
       document.getElementById('log-status').textContent = d.lines.length + ' lines · ' + new Date().toLocaleTimeString();
     } catch(e) { document.getElementById('log-status').textContent = 'fetch failed'; }
   }

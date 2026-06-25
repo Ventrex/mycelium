@@ -884,7 +884,9 @@ def ui_sync_movies():
 
 @app.get("/ui/logs")
 def ui_logs():
-    return jsonify(lines=log_buffer.get_lines(100))
+    n = request.args.get("n", default=400, type=int) or 400
+    n = max(50, min(n, 1000))
+    return jsonify(lines=log_buffer.get_lines(n))
 
 
 @app.post("/ui/run-cleanup")
