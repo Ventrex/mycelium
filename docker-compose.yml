@@ -80,6 +80,64 @@ services:
       timeout: 5s
       retries: 5
 
+  # Bazarr (+ Radarr/Sonarr, required for Bazarr to know what's in the
+  # library) as an alternative subtitle source to subliminal_fallback.py.
+  # Run Radarr/Sonarr in metadata-only mode: add the root folders below,
+  # but skip adding indexers/a download client, Mycelium already handles
+  # fetching. Then point Bazarr at both. Opt-in, behind a profile:
+  #   docker compose --profile bazarr up -d
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: mycelium-radarr
+    restart: unless-stopped
+    profiles:
+      - bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./apps/radarr:/config
+      - ./data/media/movies:/movies
+    ports:
+      - "7878:7878"
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: mycelium-sonarr
+    restart: unless-stopped
+    profiles:
+      - bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./apps/sonarr:/config
+      - ./data/media/series:/tv
+    ports:
+      - "8989:8989"
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: mycelium-bazarr
+    restart: unless-stopped
+    profiles:
+      - bazarr
+    depends_on:
+      - radarr
+      - sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./apps/bazarr:/config
+      - ./data/media/movies:/movies
+      - ./data/media/series:/tv
+    ports:
+      - "6767:6767"
+
 volumes:
   zilean_data:
   zilean_pgdata:
