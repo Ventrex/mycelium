@@ -47,6 +47,13 @@ _LIST_KEYS = {
     "EXCLUDE_LANGUAGES",
     "OPENSUBTITLES_LANGUAGES",
 }
+# People type a language by whatever name/code they know it under. The APIs
+# we query (OpenSubtitles, Podnapisi) expect the ISO 639-1 code, so normalize
+# common alternates here, once, for every consumer of OPENSUBTITLES_LANGUAGES.
+_LANGUAGE_ALIASES = {
+    "dutch": "nl", "dut": "nl", "nld": "nl", "ned": "nl",
+    "flemish": "nl", "vlaams": "nl",
+}
 _INT_KEYS = {
     "MIN_SEEDERS",
     "MAX_SIZE_GB",
@@ -269,6 +276,12 @@ def _coerce(key: str, raw: str | None):
     return raw
 
 
+def _normalize(key: str, value):
+    if key == "OPENSUBTITLES_LANGUAGES" and isinstance(value, list):
+        return [_LANGUAGE_ALIASES.get(v.lower(), v.lower()) for v in value]
+    return value
+
+
 def get(key: str, default=None):
     try:
         raw = db.get_setting(key)
@@ -282,9 +295,9 @@ def get(key: str, default=None):
     if raw is not None and raw != "":
         coerced = _coerce(key, raw)
         if coerced is not None:
-            return coerced
+            return _normalize(key, coerced)
     if hasattr(_config, key):
-        return getattr(_config, key)
+        return _normalize(key, getattr(_config, key))
     return default
 
 
