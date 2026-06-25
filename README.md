@@ -288,7 +288,6 @@ Open **`http://<your-host>:8088`** - the setup wizard walks you through everythi
 - [Jellyseerr](https://jellyseerr.dev) / [Overseerr](https://overseerr.dev) - request portal via webhook
 - [OpenSubtitles](https://www.opensubtitles.com/en/consumers) - auto subtitle download
 - subliminal (Addic7ed, TVsubtitles, Gestdown, BSPlayer) - free, no API key, auto subtitle download fallback (on by default)
-- [Bazarr](https://www.bazarr.media) - alternative subtitle manager, with Radarr/Sonarr for library awareness. Bundled behind the `bazarr` profile: `docker compose --profile bazarr up -d`
 
 ---
 

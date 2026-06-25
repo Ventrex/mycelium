@@ -8,11 +8,10 @@ All notable changes to Mycelium are documented in this file.
 
 - **Subliminal subtitle fallback**: multi-provider subtitle search (Addic7ed, TVsubtitles, Gestdown, BSPlayer), free and no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `SUBLIMINAL_ENABLED` (on by default).
 - **Self-hosted Zilean in docker-compose.yml**: `zilean` + `zilean-postgres` services bundled directly in the compose file, behind a `zilean` profile so they only start when opted in (`docker compose --profile zilean up -d`). Set `ZILEAN_URL=http://zilean:8181` to use the bundled instance instead of an external one.
-- **Bazarr in docker-compose.yml** as an alternative subtitle source: `radarr` + `sonarr` + `bazarr` services bundled behind a `bazarr` profile (`docker compose --profile bazarr up -d`). Radarr/Sonarr run in metadata-only mode (no indexers/download client needed) purely so Bazarr knows what's in the library.
 
 ### Fixed
 
-- **bsplayer log noise**: the subliminal library logged a full traceback at ERROR level on every retry against an unreachable mirror; now silenced (and its connect timeout lowered to 5s) since `subliminal_fallback.py` already reports the same failure as one clean line.
+- **bsplayer log noise**: the subliminal library logged a full traceback at ERROR level on every retry against an unreachable mirror, both from its own provider logger and from its shared error-handling helper (`subliminal.utils`); both are now silenced since `subliminal_fallback.py` already reports the same failure as one clean line. Connect timeout also lowered to 5s.
 
 ### Removed
 
