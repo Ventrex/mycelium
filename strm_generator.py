@@ -559,8 +559,8 @@ def subtitle_library_status() -> list[dict]:
 
 
 def force_fetch_subtitles(rel_path: str) -> dict:
-    """Force a (re)search for subtitles on one .strm, trying OpenSubtitles then
-    the subliminal fallback for whichever configured languages are still missing."""
+    """Force a (re)search for subtitles on one .strm via OpenSubtitles for
+    whichever configured languages are still missing."""
     strm = (Path(MEDIA_PATH) / rel_path).resolve()
     if Path(MEDIA_PATH).resolve() not in strm.parents or not strm.exists():
         return {"ok": False, "error": "strm not found"}
@@ -594,11 +594,6 @@ def force_fetch_subtitles(rel_path: str) -> dict:
         written += subtitles.fetch_for(strm, imdb_id, media_type, season=season, episode=episode, title=title, verbose=True)
     except Exception as exc:
         log.warning("force_fetch_subtitles: OpenSubtitles failed for %s: %s", rel_path, exc)
-    try:
-        import subliminal_fallback
-        written += subliminal_fallback.fetch_for(strm, title, media_type, season=season, episode=episode, year=year, verbose=True)
-    except Exception as exc:
-        log.warning("force_fetch_subtitles: subliminal failed for %s: %s", rel_path, exc)
 
     log.info("Subtitle search finished: %s (written=%d, languages=%s)",
               rel_path, written, ",".join(_existing_subtitle_langs(strm)) or "none")
@@ -916,11 +911,6 @@ def create_lazy_movie_strm(info_hash: str, magnet: str, title: str,
                 subtitles.fetch_for(path, imdb_id, "movie", title=title)
             except Exception as exc:
                 log.debug("Subtitle fetch skipped for %s: %s", folder, exc)
-            try:
-                import subliminal_fallback
-                subliminal_fallback.fetch_for(path, title, "movie", year=year)
-            except Exception as exc:
-                log.debug("subliminal subtitle fetch skipped for %s: %s", folder, exc)
         if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,
@@ -986,11 +976,6 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
                 subtitles.fetch_for(path, imdb_id, "series", season=season, episode=episode, title=title)
             except Exception as exc:
                 log.debug("Subtitle fetch skipped for %s: %s", ep_name, exc)
-            try:
-                import subliminal_fallback
-                subliminal_fallback.fetch_for(path, title, "series", season=season, episode=episode)
-            except Exception as exc:
-                log.debug("subliminal subtitle fetch skipped for %s: %s", ep_name, exc)
         if settings.get("CATBOX_PRELOAD", cfg.CATBOX_PRELOAD) and info_hash and magnet:
             threading.Thread(
                 target=_preload_torrent,

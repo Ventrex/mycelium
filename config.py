@@ -193,14 +193,6 @@ HEALTH_CACHE_SECONDS = _env_int("HEALTH_CACHE_SECONDS", 60)
 OPENSUBTITLES_API_KEY = _env("OPENSUBTITLES_API_KEY", "")
 OPENSUBTITLES_USER_AGENT = _env("OPENSUBTITLES_USER_AGENT", "Mycelium v1.0")
 OPENSUBTITLES_LANGUAGES = [l.strip().lower() for l in _env("OPENSUBTITLES_LANGUAGES", "nl").split(",") if l.strip()]
-# Optional: log in with a real account instead of just the API key. Anonymous
-# requests are capped at 5 downloads/day; a free registered account raises
-# that to 20/day, VIP to 1000/day (same code, just a different account tier).
-OPENSUBTITLES_USERNAME = _env("OPENSUBTITLES_USERNAME", "")
-OPENSUBTITLES_PASSWORD = _env("OPENSUBTITLES_PASSWORD", "")
-
-# ── Subliminal fallback (Addic7ed/TVsubtitles/Gestdown/BSPlayer, free, no API key) ──
-SUBLIMINAL_ENABLED = _env("SUBLIMINAL_ENABLED", "true").lower() in ("1", "true", "yes")
 
 # ── Continue-watching priority ────────────────────────────────────────────────
 CONTINUE_WATCHING_INTERVAL_MINUTES = _env_int("CONTINUE_WATCHING_INTERVAL_MINUTES", 60)
