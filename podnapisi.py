@@ -58,7 +58,7 @@ def _languages() -> list[str]:
 
 
 def _search(title: str, season: int | None, episode: int | None,
-            language: str, year: int | None = None) -> list[dict]:
+            language: str, year: int | None = None, verbose: bool = False) -> list[dict]:
     params: dict = {"keywords": title, "language": language}
     if season is not None and episode is not None:
         params["seasons"] = season
@@ -73,7 +73,7 @@ def _search(title: str, season: int | None, episode: int | None,
         r.raise_for_status()
         return (r.json() or {}).get("data") or []
     except Exception as exc:
-        log.debug("Podnapisi search failed for %r: %s", title, exc)
+        (log.warning if verbose else log.debug)("Podnapisi search failed for %r: %s", title, exc)
         return []
 
 
@@ -105,21 +105,33 @@ def title_for_imdb(imdb_id: str) -> str | None:
 
 def fetch_for(strm_path: Path, title: str, media_type: str,
               season: int | None = None, episode: int | None = None,
-              year: int | None = None) -> int:
+              year: int | None = None, verbose: bool = False) -> int:
     """Download configured-language subtitles next to a .strm file.
-    Returns count of files written."""
-    if not _enabled() or not title:
+    Returns count of files written. With verbose=True (used by the manual
+    "Search" action), logs the reason when a language yields nothing, so
+    failures are visible in the Logs tab instead of swallowed silently."""
+    if not _enabled():
+        if verbose:
+            log.info("Podnapisi: disabled, skipping")
+        return 0
+    if not title:
+        if verbose:
+            log.warning("Podnapisi: no title available, skipping")
         return 0
     languages = _languages()
     if not languages:
+        if verbose:
+            log.warning("Podnapisi: no OPENSUBTITLES_LANGUAGES configured, skipping")
         return 0
     written = 0
     for lang in languages:
         target = strm_path.with_suffix(f".{lang}.srt")
         if target.exists():
             continue
-        results = _search(title, season, episode, lang, year)
+        results = _search(title, season, episode, lang, year, verbose=verbose)
         if not results:
+            if verbose:
+                log.info("Podnapisi: no results for %r (lang=%s)", title, lang)
             continue
         pid = results[0].get("id")
         if not pid:

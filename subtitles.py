@@ -36,7 +36,7 @@ def _headers() -> dict:
 
 
 def _search(imdb_id: str, season: int | None, episode: int | None,
-            language: str) -> list[dict]:
+            language: str, verbose: bool = False) -> list[dict]:
     params = {"languages": language}
     # OS expects numeric imdb id (no "tt" prefix)
     params["imdb_id"] = imdb_id.lstrip("t")
@@ -49,7 +49,7 @@ def _search(imdb_id: str, season: int | None, episode: int | None,
         r.raise_for_status()
         return (r.json() or {}).get("data") or []
     except Exception as exc:
-        log.debug("OpenSubtitles search failed: %s", exc)
+        (log.warning if verbose else log.debug)("OpenSubtitles search failed: %s", exc)
         return []
 
 
@@ -69,20 +69,31 @@ def _request_download_url(file_id: int) -> str | None:
 
 
 def fetch_for(strm_path: Path, imdb_id: str, media_type: str,
-              season: int | None = None, episode: int | None = None) -> int:
+              season: int | None = None, episode: int | None = None,
+              verbose: bool = False) -> int:
     """Download configured-language subtitles next to a .strm file.
-    Returns count of files written."""
+    Returns count of files written. With verbose=True (used by the manual
+    "Search" action), logs the reason when a language yields nothing, so
+    failures are visible in the Logs tab instead of swallowed silently."""
     api_key = _api_key()
     languages = _languages()
-    if not api_key or not languages:
+    if not api_key:
+        if verbose:
+            log.warning("OpenSubtitles: no OPENSUBTITLES_API_KEY configured, skipping")
+        return 0
+    if not languages:
+        if verbose:
+            log.warning("OpenSubtitles: no OPENSUBTITLES_LANGUAGES configured, skipping")
         return 0
     written = 0
     for lang in languages:
         target = strm_path.with_suffix(f".{lang}.srt")
         if target.exists():
             continue
-        results = _search(imdb_id, season, episode, lang)
+        results = _search(imdb_id, season, episode, lang, verbose=verbose)
         if not results:
+            if verbose:
+                log.info("OpenSubtitles: no results for %s (imdb=%s, lang=%s)", strm_path.name, imdb_id, lang)
             continue
         # Pick most-downloaded file from top result
         top = results[0]
