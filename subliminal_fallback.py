@@ -36,6 +36,19 @@ _PROVIDER_CONFIGS = {"addic7ed": {"allow_searches": True}, "bsplayer": {"timeout
 logging.getLogger("subliminal.providers.bsplayer").setLevel(logging.CRITICAL)
 
 
+class _BSPlayerNoiseFilter(logging.Filter):
+    """subliminal.utils.handle_exception() logs uncaught provider errors
+    generically (e.g. "Unexpected error. Provider bsplayer") regardless of
+    which provider raised them. Drop only the bsplayer ones here so failures
+    from the other providers stay visible in the admin Logs tab."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "bsplayer" not in record.getMessage().lower()
+
+
+logging.getLogger("subliminal.utils").addFilter(_BSPlayerNoiseFilter())
+
+
 def _enabled() -> bool:
     return bool(_settings.get("SUBLIMINAL_ENABLED", True))
 
