@@ -766,17 +766,35 @@ def setup_test(kind: str):
 
         if kind == "opensubtitles":
             api_key = (f.get("OPENSUBTITLES_API_KEY") or "").strip()
+            username = (f.get("OPENSUBTITLES_USERNAME") or "").strip()
+            password = (f.get("OPENSUBTITLES_PASSWORD") or "").strip()
             if not api_key:
                 return jsonify(ok=False, error="API key empty")
-            r = __import__("requests").get(
+            _req = __import__("requests")
+            headers = {"Api-Key": api_key, "Content-Type": "application/json"}
+            if username and password:
+                login = _req.post(
+                    "https://api.opensubtitles.com/api/v1/login",
+                    headers={**headers, "Accept": "application/json"},
+                    json={"username": username, "password": password},
+                    timeout=8,
+                )
+                if login.status_code != 200:
+                    return jsonify(ok=False, detail=f"Login failed: HTTP {login.status_code}")
+                token = (login.json() or {}).get("token")
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+            r = _req.get(
                 "https://api.opensubtitles.com/api/v1/infos/user",
-                headers={"Api-Key": api_key, "Content-Type": "application/json"},
+                headers=headers,
                 timeout=8,
             )
             if r.status_code == 200:
                 data = r.json().get("data", {})
                 remaining = data.get("remaining_downloads", "?")
-                return jsonify(ok=True, detail=f"OK  -  {remaining} downloads remaining today")
+                level = data.get("level", "")
+                detail = f"OK ({level})  -  {remaining} downloads remaining today" if level else f"OK  -  {remaining} downloads remaining today"
+                return jsonify(ok=True, detail=detail)
             return jsonify(ok=r.status_code < 400, detail=f"HTTP {r.status_code}")
 
         if kind == "zilean":
