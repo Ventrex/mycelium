@@ -23,7 +23,9 @@ def _api_key() -> str:
 
 def _languages() -> list[str]:
     raw = _settings.get("OPENSUBTITLES_LANGUAGES", "")
-    return [l.strip().lower() for l in raw.split(",") if l.strip()]
+    if isinstance(raw, list):
+        return [l.strip().lower() for l in raw if l.strip()]
+    return [l.strip().lower() for l in (raw or "").split(",") if l.strip()]
 
 
 def _headers() -> dict:
