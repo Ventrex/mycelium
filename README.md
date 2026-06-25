@@ -283,11 +283,11 @@ docker compose up -d
 Open **`http://<your-host>:8088`** - the setup wizard walks you through everything. Each step has a **Test** button. The first account you create becomes admin.
 
 **Optional add-ons** (not needed to get started):
-- [Zilean](https://github.com/iPromKnight/zilean) - self-hosted hash index, faster and private
+- [Zilean](https://github.com/iPromKnight/zilean) - self-hosted hash index, faster and private. Bundled in `docker-compose.yml` behind the `zilean` profile: `docker compose --profile zilean up -d`
 - [RealDebrid](https://real-debrid.com) - fallback debrid when TorBox misses
 - [Jellyseerr](https://jellyseerr.dev) / [Overseerr](https://overseerr.dev) - request portal via webhook
 - [OpenSubtitles](https://www.opensubtitles.com/en/consumers) - auto subtitle download
-- Podnapisi - free, no API key, auto subtitle download fallback (on by default)
+- subliminal (Addic7ed, TVsubtitles, Gestdown, BSPlayer) - free, no API key, auto subtitle download fallback (on by default)
 
 ---
 
@@ -365,7 +365,7 @@ Full reference: [`.env.example`](.env.example). Key variables:
 | `DISCORD_WEBHOOK_URL` | *(empty)* | Optional notifications |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | *(empty)* | Optional notifications |
 | `OPENSUBTITLES_API_KEY` | *(empty)* | Auto subtitle download |
-| `PODNAPISI_ENABLED` | `true` | Free, no API key, subtitle download fallback |
+| `SUBLIMINAL_ENABLED` | `true` | Free, no API key, subtitle download fallback (Addic7ed, TVsubtitles, Gestdown, BSPlayer) |
 | `METRICS_TOKEN` | *(empty)* | Bearer token for `/metrics` scraping |
 
 ---

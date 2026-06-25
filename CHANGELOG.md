@@ -6,7 +6,12 @@ All notable changes to Mycelium are documented in this file.
 
 ### Added
 
-- **Podnapisi subtitle provider**: free, no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `PODNAPISI_ENABLED` (on by default).
+- **Subliminal subtitle fallback**: multi-provider subtitle search (Addic7ed, TVsubtitles, Gestdown, BSPlayer), free and no API key needed, used as an extra/fallback subtitle source alongside OpenSubtitles for `.strm` generation (movies and series) and the web player's in-browser subtitle search. Shares `OPENSUBTITLES_LANGUAGES` for language selection; toggle with `SUBLIMINAL_ENABLED` (on by default).
+- **Self-hosted Zilean in docker-compose.yml**: `zilean` + `zilean-postgres` services bundled directly in the compose file, behind a `zilean` profile so they only start when opted in (`docker compose --profile zilean up -d`). Set `ZILEAN_URL=http://zilean:8181` to use the bundled instance instead of an external one.
+
+### Removed
+
+- **Podnapisi subtitle provider**: the domain has gone offline (DNS no longer resolves); removed in favor of the subliminal-based fallback above.
 
 ## [0.5.6] - 2026-06-24
 

@@ -266,7 +266,7 @@
     <!-- Step 8: OpenSubtitles (Full only) -->
     <div class="step" data-step="8">
       <h2>Subtitles</h2>
-      <p class="lede">Provides subtitle search in the web player. OpenSubtitles needs a free API key (500 downloads/day, VIP gives 1 000) &rarr; <a href="https://www.opensubtitles.com/consumers" target="_blank" style="color:var(--accent)">opensubtitles.com/consumers</a>. Podnapisi needs no key at all and is on by default as an extra/fallback source.</p>
+      <p class="lede">Provides subtitle search in the web player. OpenSubtitles needs a free API key (500 downloads/day, VIP gives 1 000) &rarr; <a href="https://www.opensubtitles.com/consumers" target="_blank" style="color:var(--accent)">opensubtitles.com/consumers</a>. The subliminal fallback (Addic7ed, TVsubtitles, Gestdown, BSPlayer) needs no key at all and is on by default as an extra source.</p>
       <div class="field">
         <label>API key</label>
         <input type="password" id="OPENSUBTITLES_API_KEY" placeholder="optional">
@@ -276,17 +276,17 @@
       <div class="field">
         <label>Subtitle languages</label>
         <input type="text" id="OPENSUBTITLES_LANGUAGES" placeholder="nl,en">
-        <span class="hint">Comma-separated ISO codes. Tried in order  -  <code>nl,en</code> prefers Dutch, falls back to English. Used by both OpenSubtitles and Podnapisi.</span>
+        <span class="hint">Comma-separated ISO codes. Tried in order  -  <code>nl,en</code> prefers Dutch, falls back to English. Used by both OpenSubtitles and the subliminal fallback.</span>
       </div>
     </div>
 
     <!-- Step 9: Zilean (Full only) -->
     <div class="step" data-step="9">
       <h2>Zilean</h2>
-      <p class="lede">Optional self-hosted torrent index (DMM-based). Faster than Torrentio for content in its index, no rate limits. Leave blank if you don't run one. &rarr; <a href="https://github.com/iPromKnight/zilean" target="_blank" style="color:var(--accent)">github.com/iPromKnight/zilean</a></p>
+      <p class="lede">Optional self-hosted torrent index (DMM-based). Faster than Torrentio for content in its index, no rate limits. A bundled instance ships in docker-compose.yml behind the "zilean" profile (<code>docker compose --profile zilean up -d</code>); use <code>http://zilean:8181</code> for that, or point at your own instance. Leave blank if you don't run one. &rarr; <a href="https://github.com/iPromKnight/zilean" target="_blank" style="color:var(--accent)">github.com/iPromKnight/zilean</a></p>
       <div class="field">
         <label>Zilean URL</label>
-        <input type="text" id="ZILEAN_URL" placeholder="http://10.0.0.10:8181">
+        <input type="text" id="ZILEAN_URL" placeholder="http://zilean:8181">
         <button type="button" class="test-btn" onclick="testConn('zilean')">Test connection</button>
         <span id="r-zilean" class="test-result"></span>
       </div>

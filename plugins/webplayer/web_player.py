@@ -15,8 +15,8 @@ import requests.exceptions as _req_exc
 
 import db
 import health_cache
-import podnapisi
 import settings as _settings
+import subliminal_fallback
 import subtitles as _subtitles
 import torbox
 import torrentio
@@ -1102,8 +1102,9 @@ def _subtitles_task(cdn_url: str, file_info: dict,
 def _fetch_external_subtitles(imdb_id: str, media_type: str,
                                season: int | None, episode: int | None,
                                tmp_dir: Path) -> None:
-    """Download subtitles from OpenSubtitles, falling back to Podnapisi
-    (free, no API key) for any language OpenSubtitles didn't cover."""
+    """Download subtitles from OpenSubtitles, falling back to subliminal's
+    provider pool (Addic7ed, TVsubtitles, Gestdown, BSPlayer) for any language
+    OpenSubtitles didn't cover."""
     langs = _settings.get("OPENSUBTITLES_LANGUAGES") or []
     if isinstance(langs, str):
         langs = [l.strip() for l in langs.split(",") if l.strip()]
@@ -1111,8 +1112,8 @@ def _fetch_external_subtitles(imdb_id: str, media_type: str,
         langs = ["en"]
 
     api_key = _settings.get("OPENSUBTITLES_API_KEY", "")
-    podnapisi_enabled = _settings.get("PODNAPISI_ENABLED", True)
-    title = podnapisi.title_for_imdb(imdb_id) if podnapisi_enabled else None
+    subliminal_enabled = _settings.get("SUBLIMINAL_ENABLED", True)
+    title = subliminal_fallback.title_for_imdb(imdb_id) if subliminal_enabled else None
 
     for lang in langs:
         vtt_path = tmp_dir / f"sub_ext_{lang}.vtt"
@@ -1120,8 +1121,8 @@ def _fetch_external_subtitles(imdb_id: str, media_type: str,
             continue
         if api_key and _fetch_opensubtitles_vtt(imdb_id, season, episode, lang, vtt_path, tmp_dir):
             continue
-        if podnapisi_enabled and title:
-            _fetch_podnapisi_vtt(title, media_type, season, episode, lang, vtt_path, tmp_dir)
+        if subliminal_enabled and title:
+            _fetch_subliminal_vtt(title, media_type, season, episode, lang, vtt_path, tmp_dir)
 
 
 def _fetch_opensubtitles_vtt(imdb_id: str, season: int | None, episode: int | None,
@@ -1153,21 +1154,13 @@ def _fetch_opensubtitles_vtt(imdb_id: str, season: int | None, episode: int | No
     return _convert_to_vtt(resp.content, vtt_path, lang, tmp_dir, "OpenSubtitles")
 
 
-def _fetch_podnapisi_vtt(title: str, media_type: str, season: int | None, episode: int | None,
-                          lang: str, vtt_path: Path, tmp_dir: Path) -> bool:
-    is_series = media_type == "series"
-    results = podnapisi._search(title, season if is_series else None,
-                                 episode if is_series else None, lang)
-    if not results:
-        log.info("web_player: no Podnapisi subtitles for %r lang=%s", title, lang)
-        return False
-    pid = results[0].get("id")
-    if not pid:
-        return False
-    content = podnapisi._download(str(pid))
+def _fetch_subliminal_vtt(title: str, media_type: str, season: int | None, episode: int | None,
+                           lang: str, vtt_path: Path, tmp_dir: Path) -> bool:
+    content = subliminal_fallback.fetch_content(title, media_type, season, episode, None, lang)
     if not content:
+        log.info("web_player: no subliminal subtitles for %r lang=%s", title, lang)
         return False
-    return _convert_to_vtt(content, vtt_path, lang, tmp_dir, "Podnapisi")
+    return _convert_to_vtt(content, vtt_path, lang, tmp_dir, "Subliminal")
 
 
 def _convert_to_vtt(raw_bytes: bytes, vtt_path: Path, lang: str, tmp_dir: Path, source: str) -> bool:
