@@ -14,6 +14,7 @@ All notable changes to Mycelium are documented in this file.
 
 - **bsplayer log noise**: the subliminal library logged a full traceback at ERROR level on every retry against an unreachable mirror, both from its own provider logger and from its shared error-handling helper (`subliminal.utils`); both are now silenced since `subliminal_fallback.py` already reports the same failure as one clean line. Connect timeout also lowered to 5s.
 - **OpenSubtitles 406 errors hid the real reason**: download failures only logged the generic HTTP status, not OpenSubtitles' own error message (e.g. "daily quota exceeded"); now surfaced in the log line.
+- **Auto-Approve reported success even when nothing was added**: the daily genre-fill job logged "N item(s) queued" and counted it against the per-genre/daily cap based only on whether `processor.process()` raised an exception, not its actual return value, so titles that ended up `wanted`/`failed`/`rate_limited` were silently counted as successes, capping the run early instead of trying more candidates.
 
 ### Removed
 

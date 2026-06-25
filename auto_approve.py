@@ -101,11 +101,10 @@ def _queue_movie(item: dict, seen: set[str]) -> bool:
     if not imdb_id or imdb_id in seen:
         return False
     log.info("Auto-approve: queueing movie %s (%s)", title, imdb_id)
+    seen.add(imdb_id)
     try:
-        processor.process(MediaRequest(title=title, media_type="movie", imdb_id=imdb_id,
-                                        seasons=[], tmdb_id=tmdb_id))
-        seen.add(imdb_id)
-        return True
+        return processor.process(MediaRequest(title=title, media_type="movie", imdb_id=imdb_id,
+                                                seasons=[], tmdb_id=tmdb_id))
     except Exception as exc:
         log.warning("Auto-approve: processor failed for %s: %s", title, exc)
         return False
