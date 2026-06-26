@@ -2329,36 +2329,74 @@ def _cleanup_duplicate_strms_locked() -> dict:
     return {"scanned": scanned, "cleaned": cleaned, "skipped": skipped}
 
 
+_SELF_HEAL_CATBOX_MAX = 5  # cap per hourly run so this can't turn into a CPU/API spike
+
+
 def _self_heal_sample(sample_size: int = 10) -> None:
-    """HEAD-check a random sample of existing .strm files. If a high fraction
-    fail, log a warning and let the next cleanup cycle do the heavy lifting."""
+    """HEAD-check a random sample of existing .strm files and actually repair
+    what's broken, instead of just logging a warning for the next cycle.
+
+    Fixed-mode CDN URLs really do expire (~24h), so a failed HEAD probe here is
+    a real signal - if enough of the sample is dead, a full cleanup pass is
+    kicked off right away rather than waiting for the next scheduled run.
+    Catbox proxy URLs always redirect successfully regardless of the underlying
+    release's health, so probing them here would be pointless (and would itself
+    trigger an expensive materialize); real failures for those are already
+    tracked in playability_state from actual playback attempts, so a bounded
+    number of the worst-degraded items are re-resolved instead.
+    """
     import random
     media = Path(MEDIA_PATH)
-    if not media.is_dir():
+    if media.is_dir():
+        strms: list[Path] = []
+        for sub in ("movies", "series"):
+            d = media / sub
+            if d.is_dir():
+                strms.extend(d.rglob("*.strm"))
+        if len(strms) > 5:
+            sample = random.sample(strms, min(sample_size, len(strms)))
+            bad = probed = 0
+            for s in sample:
+                try:
+                    url = s.read_text(encoding="utf-8").strip()
+                except Exception:
+                    continue
+                if "/stream/" in url and url.startswith("http://"):
+                    continue  # catbox proxy  -  handled via playability_state below
+                probed += 1
+                try:
+                    r = req_lib.head(url, timeout=5, allow_redirects=True)
+                    if r.status_code >= 400:
+                        bad += 1
+                except Exception:
+                    bad += 1
+            if bad and probed and bad / probed >= 0.3:
+                log.warning("Self-heal probe: %d/%d sampled strms failed  -  triggering cleanup now",
+                            bad, probed)
+                import cleanup
+                threading.Thread(target=cleanup.run_cleanup, name="self-heal-cleanup",
+                                  daemon=True).start()
+
+    if settings.get("CATBOX_MODE", False):
+        _self_heal_catbox()
+
+
+def _self_heal_catbox() -> None:
+    """Re-resolve a bounded number of the worst-degraded catbox items, using the
+    same real failure history (playability_state) that the admin UI surfaces."""
+    import catbox
+    degraded = db.get_degraded_items(min_failures=2)
+    if not degraded:
         return
-    strms: list[Path] = []
-    for sub in ("movies", "series"):
-        d = media / sub
-        if d.is_dir():
-            strms.extend(d.rglob("*.strm"))
-    if len(strms) <= 5:
-        return
-    sample = random.sample(strms, min(sample_size, len(strms)))
-    bad = 0
-    for s in sample:
-        try:
-            url = s.read_text(encoding="utf-8").strip()
-        except Exception:
-            continue
-        # Catbox proxy URLs always work  -  skip the probe
-        if "/stream/" in url and url.startswith("http://"):
+    targets = degraded[:_SELF_HEAL_CATBOX_MAX]
+    fixed = 0
+    for item in targets:
+        token = item.get("token")
+        if not token:
             continue
         try:
-            r = req_lib.head(url, timeout=5, allow_redirects=True)
-            if r.status_code >= 400:
-                bad += 1
-        except Exception:
-            bad += 1
-    if bad and bad / len(sample) >= 0.3:
-        log.warning("Self-heal probe: %d/%d sampled strms failed; cleanup will repair",
-                    bad, len(sample))
+            if catbox.materialize(token, allow_readd=True):
+                fixed += 1
+        except Exception as exc:
+            log.warning("Self-heal: materialize failed for %s: %s", item.get("title"), exc)
+    log.info("Self-heal: re-resolved %d/%d degraded catbox item(s)", fixed, len(targets))

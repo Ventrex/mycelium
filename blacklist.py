@@ -15,6 +15,14 @@ def is_blacklisted(info_hash: str) -> bool:
     return bool(rec and rec["fail_count"] >= _threshold())
 
 
+def blacklist_now(info_hash: str, reason: str | None = None) -> None:
+    """User-initiated blacklist (e.g. wrong audio language) - excluded from
+    future candidate searches immediately, unlike record_failure() which only
+    blocks once the organic failure threshold is reached."""
+    db.blacklist_hash_manually(info_hash, reason)
+    log.info("Hash %s manually blacklisted: %s", info_hash, reason or "no reason given")
+
+
 def record_failure(info_hash: str, error: str | None = None) -> None:
     db.record_failed_hash(info_hash, error)
     try:

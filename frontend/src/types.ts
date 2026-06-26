@@ -51,6 +51,9 @@ export interface TmdbDetail extends TmdbItem {
     backdrop_path: string | null;
   } | null;
   is_blacklisted?: boolean;
+  virtual_item_token?: string;
+  info_hash?: string;
+  release_quality?: string | null;
 }
 
 export interface Genre {
