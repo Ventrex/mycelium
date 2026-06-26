@@ -87,9 +87,10 @@ def is_auto_approved(media_type: str, genre_ids: list[int] | None, year: int | s
 
 
 def _passes_filters(item: dict, min_votes: int | None = None) -> bool:
-    if (item.get("rating") or 0) < AUTO_ADD_MIN_RATING:
+    min_rating = _settings.get("AUTO_ADD_MIN_RATING", AUTO_ADD_MIN_RATING)
+    if (item.get("rating") or 0) < min_rating:
         return False
-    threshold = min_votes if min_votes is not None else AUTO_ADD_MIN_VOTES
+    threshold = min_votes if min_votes is not None else _settings.get("AUTO_ADD_MIN_VOTES", AUTO_ADD_MIN_VOTES)
     if (item.get("votes") or 0) < threshold:
         return False
     return True
