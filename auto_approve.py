@@ -91,10 +91,19 @@ def is_auto_approved(media_type: str, genre_ids: list[int] | None, year: int | s
 
 
 def _passes_filters(item: dict, min_votes: int | None = None) -> bool:
-    min_rating = _settings.get("AUTO_ADD_MIN_RATING", AUTO_ADD_MIN_RATING)
+    # Coerce defensively: a settings override can arrive as a str, and a raw
+    # comparison (float < str) would raise and kill the whole auto-approve run.
+    try:
+        min_rating = float(_settings.get("AUTO_ADD_MIN_RATING", AUTO_ADD_MIN_RATING))
+    except (TypeError, ValueError):
+        min_rating = AUTO_ADD_MIN_RATING
     if (item.get("rating") or 0) < min_rating:
         return False
-    threshold = min_votes if min_votes is not None else _settings.get("AUTO_ADD_MIN_VOTES", AUTO_ADD_MIN_VOTES)
+    raw_votes = min_votes if min_votes is not None else _settings.get("AUTO_ADD_MIN_VOTES", AUTO_ADD_MIN_VOTES)
+    try:
+        threshold = int(raw_votes)
+    except (TypeError, ValueError):
+        threshold = AUTO_ADD_MIN_VOTES
     if (item.get("votes") or 0) < threshold:
         return False
     return True
@@ -287,21 +296,26 @@ def _fill_media_type(media_type: str, queue_fn, seen: set[str], media_bl: set[in
                 if cap is not None and queued + added >= cap:
                     break
                 scanned += 1
-                if item.get("tmdb_id") in media_bl:
-                    continue
-                if _is_unreleased(item):
-                    continue
-                if not _passes_filters(item, rule.get("min_votes")):
-                    skipped_filter += 1
-                    continue
-                if _has_blacklisted_person(media_type, item.get("tmdb_id"), person_bl):
-                    continue
-                if queue_fn(item, seen):
-                    added += 1
-                else:
-                    # queue_fn returns False both for already-known titles and for
-                    # titles with no cached release yet; split is logged for diagnosis.
-                    skipped_norelease += 1
+                # One malformed title must never abort the whole fill run.
+                try:
+                    if item.get("tmdb_id") in media_bl:
+                        continue
+                    if _is_unreleased(item):
+                        continue
+                    if not _passes_filters(item, rule.get("min_votes")):
+                        skipped_filter += 1
+                        continue
+                    if _has_blacklisted_person(media_type, item.get("tmdb_id"), person_bl):
+                        continue
+                    if queue_fn(item, seen):
+                        added += 1
+                    else:
+                        # queue_fn returns False both for already-known titles and for
+                        # titles with no cached release yet; split is logged for diagnosis.
+                        skipped_norelease += 1
+                except Exception as exc:
+                    log.warning("Auto-approve: skipping %s after error: %s",
+                                item.get("title") or item.get("tmdb_id"), exc)
         log.info("Auto-approve genre=%s/%s: %d queued (scanned %d, below-threshold %d, "
                  "already-have/no-release %d)", media_type, genre_id, added, scanned,
                  skipped_filter, skipped_norelease)
