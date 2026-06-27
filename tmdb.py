@@ -62,6 +62,33 @@ def get_show_info(tmdb_id: int) -> dict | None:
     return _get(f"/tv/{tmdb_id}")
 
 
+def release_date(imdb_id: str | None = None, tmdb_id: int | None = None,
+                 media_type: str = "movie") -> str | None:
+    """Return the YYYY-MM-DD theatrical/first-air date for a title, or None if
+    unknown. Prefers a direct tmdb_id lookup; falls back to /find by imdb_id."""
+    if media_type == "movie":
+        if tmdb_id:
+            data = _get(f"/movie/{tmdb_id}")
+            if data:
+                return data.get("release_date") or None
+        if imdb_id:
+            data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+            results = (data or {}).get("movie_results") or []
+            if results:
+                return results[0].get("release_date") or None
+    else:
+        if tmdb_id:
+            data = _get(f"/tv/{tmdb_id}")
+            if data:
+                return data.get("first_air_date") or None
+        if imdb_id:
+            data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+            results = (data or {}).get("tv_results") or []
+            if results:
+                return results[0].get("first_air_date") or None
+    return None
+
+
 def get_season_episodes(tmdb_id: int, season: int) -> list[dict]:
     """Return episode list for a season; each dict has episode_number and air_date."""
     data = _get(f"/tv/{tmdb_id}/season/{season}")
@@ -183,6 +210,7 @@ def _norm_item(item: dict, media_type: str | None = None) -> dict:
         "title": item.get("title") or item.get("name") or "",
         "original_title": item.get("original_title") or item.get("original_name") or "",
         "year": ((item.get("release_date") or item.get("first_air_date") or "")[:4]) or None,
+        "release_date": item.get("release_date") or item.get("first_air_date") or "",
         "rating": round(float(item.get("vote_average") or 0), 1),
         "votes": item.get("vote_count") or 0,
         "popularity": item.get("popularity") or 0,

@@ -506,6 +506,23 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
     started = time.monotonic()
     row_id = db.insert_request(req.title, req.imdb_id, req.media_type, req.seasons,
                                 tmdb_id=req.tmdb_id)
+
+    # Never accept a release for a movie that isn't out yet: pre-release
+    # blockbusters attract fake/junk cached torrents (mislabeled CAMs, scam
+    # uploads) that would otherwise get a .strm and show in the library playing
+    # garbage. Mark it upcoming and recheck once it has actually released.
+    if req.is_movie:
+        try:
+            import datetime
+            import tmdb
+            rd = tmdb.release_date(req.imdb_id, getattr(req, "tmdb_id", None), "movie")
+            if rd and rd > datetime.date.today().isoformat():
+                db.update_request(row_id, "upcoming", error=f"not released yet (releases {rd})")
+                log.info("Skip %s: not released until %s  -  marked upcoming", req.title, rd)
+                return False
+        except Exception as exc:
+            log.debug("release-date guard skipped for %s: %s", req.title, exc)
+
     success = False
     winner: Optional[TorrentioStream] = None
     try:
