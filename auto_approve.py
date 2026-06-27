@@ -38,6 +38,10 @@ log = logging.getLogger(__name__)
 FAVORITE_ACTOR_PER_ACTOR_LIMIT = 3
 FAVORITE_ACTOR_RECENCY_YEARS = 1
 
+# TMDB TV genre ids for non-scripted formats we never want to auto-queue from an
+# actor's filmography: 10767 Talk, 10763 News, 10764 Reality.
+_NON_SCRIPTED_GENRE_IDS = {10767, 10763, 10764}
+
 
 def _key(media_type: str) -> str:
     return f"AUTO_APPROVE_RULES_{'MOVIE' if media_type == 'movie' else 'TV'}"
@@ -143,6 +147,16 @@ def _has_blacklisted_person(media_type: str, tmdb_id: int | None, person_bl: set
     return any(pid in person_bl for pid in cast_ids)
 
 
+def _is_non_scripted_or_guest(item: dict) -> bool:
+    """True for talk shows, news, reality TV, or a self/guest appearance - favoriting
+    an actor should queue their actual acting roles, not every programme they once
+    guested on as themselves."""
+    if set(item.get("genre_ids") or []) & _NON_SCRIPTED_GENRE_IDS:
+        return True
+    character = (item.get("character") or "").strip().lower()
+    return character in ("self", "himself", "herself") or character.startswith("self ")
+
+
 def _is_recent_or_upcoming(item: dict) -> bool:
     """True if a filmography credit looks like new/upcoming work rather than an
     actor's back catalog - favoriting someone shouldn't queue their whole career."""
@@ -197,6 +211,8 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
             media_bl = movie_bl if media_type == "movie" else tv_bl
             if item.get("tmdb_id") in media_bl or not _is_recent_or_upcoming(item):
                 continue
+            if _is_non_scripted_or_guest(item):
+                continue
             queue_fn = _queue_movie if media_type == "movie" else _queue_series
             seen = seen_movies if media_type == "movie" else seen_series
             if queue_fn(item, seen):
@@ -214,22 +230,35 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
 
 def _fill_media_type(media_type: str, queue_fn, seen: set[str], media_bl: set[int],
                       person_bl: set[int], cap: int | None) -> int:
-    """Queue up to `cap` new titles across all enabled/auto-fill genres for one
-    media type, scanning multiple TMDB pages per genre. Returns how many were
-    queued (None cap means no ceiling)."""
+    """Queue up to `cap` new titles across every genre with "Auto-fill trending"
+    enabled for one media type, scanning multiple TMDB pages per genre. Returns
+    how many were queued (None cap means no ceiling).
+
+    Note: the daily fill is gated on `auto_request_trending` alone, independent of
+    `enabled` (which only governs whether *manual* requests in this genre skip the
+    pending-approval queue). The two are separate concepts: you can want proactive
+    fill without auto-approving other people's manual requests, and vice versa."""
     rules = get_rules(media_type)
     per_genre_limit = _settings.get("AUTO_APPROVE_PER_GENRE_LIMIT", AUTO_APPROVE_PER_GENRE_LIMIT)
     max_pages = _settings.get("AUTO_APPROVE_MAX_PAGES", AUTO_APPROVE_MAX_PAGES)
+    eligible = {gid: r for gid, r in rules.items() if r.get("auto_request_trending")}
+    if not eligible:
+        log.info("Auto-approve %s: no genre has 'Auto-fill trending' enabled; "
+                 "nothing to fill (tick the 'Auto-fill trending' column on the "
+                 "Auto-Approve page)", media_type)
+        return 0
+    log.info("Auto-approve %s: filling from %d genre(s) with auto-fill on, cap=%s",
+             media_type, len(eligible), cap if cap is not None else "off")
     queued = 0
-    for genre_id_str, rule in rules.items():
+    for genre_id_str, rule in eligible.items():
         if cap is not None and queued >= cap:
             break
-        if not rule.get("enabled") or not rule.get("auto_request_trending"):
-            continue
         genre_id = int(genre_id_str)
         # Scan multiple TMDB pages: page 1 alone (top-20 popular) is mostly
         # titles we already have, so without paging only a handful are ever new.
         added = 0
+        scanned = 0
+        skipped_seen = skipped_filter = skipped_norelease = 0
         for page in range(1, max_pages + 1):
             if added >= per_genre_limit:
                 break
@@ -244,16 +273,23 @@ def _fill_media_type(media_type: str, queue_fn, seen: set[str], media_bl: set[in
                     break
                 if cap is not None and queued + added >= cap:
                     break
+                scanned += 1
                 if item.get("tmdb_id") in media_bl:
                     continue
                 if not _passes_filters(item, rule.get("min_votes")):
+                    skipped_filter += 1
                     continue
                 if _has_blacklisted_person(media_type, item.get("tmdb_id"), person_bl):
                     continue
                 if queue_fn(item, seen):
                     added += 1
-        if added:
-            log.info("Auto-approve genre=%s/%s: %d new item(s) queued", media_type, genre_id, added)
+                else:
+                    # queue_fn returns False both for already-known titles and for
+                    # titles with no cached release yet; split is logged for diagnosis.
+                    skipped_norelease += 1
+        log.info("Auto-approve genre=%s/%s: %d queued (scanned %d, below-threshold %d, "
+                 "already-have/no-release %d)", media_type, genre_id, added, scanned,
+                 skipped_filter, skipped_norelease)
         queued += added
     return queued
 
