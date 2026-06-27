@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, tmdbImg } from '../api';
-import type { AutoApproveRule, AutoApproveRules, FavoriteActor, Genre, MediaType } from '../types';
+import type { AutoApproveRule, AutoApproveRules, FavoriteActor, Genre, MediaType, TmdbItem } from '../types';
+import PersonModal from '../components/PersonModal';
+import DetailModal from '../components/DetailModal';
 
 const EMPTY_RULE: AutoApproveRule = {
   enabled: false,
@@ -49,6 +51,8 @@ export default function AutoApprove() {
 
 function FavoriteActorsPanel() {
   const qc = useQueryClient();
+  const [personId, setPersonId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['favorite-actors'],
     queryFn: api.favoriteActors,
@@ -59,13 +63,14 @@ function FavoriteActorsPanel() {
   });
 
   const actors = data?.items || [];
+  const openItem = (it: TmdbItem) => setDetail({ id: it.tmdb_id, type: it.media_type });
 
   return (
     <section className="border-t border-border pt-6">
       <h2 className="text-lg font-bold mb-1">Favorite actors</h2>
       <p className="text-sm text-muted mb-4">
-        Mycelium auto-requests recent and upcoming movies/shows for actors you favorite.
-        Use Search to find an actor, open their page, and click &quot;⭐ Favorite&quot;.
+        Mycelium auto-requests recent movies/shows for actors you favorite. Click an actor to
+        open their page and filmography; use Search to add new favorites.
       </p>
       {isLoading ? (
         <div className="text-muted text-sm">Loading...</div>
@@ -75,7 +80,13 @@ function FavoriteActorsPanel() {
         <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 gap-3">
           {actors.map((a: FavoriteActor) => (
             <div key={a.tmdb_id} className="text-left">
-              <div className="aspect-[2/3] rounded-md overflow-hidden bg-bg border border-border">
+              <button
+                type="button"
+                onClick={() => setPersonId(a.tmdb_id)}
+                title={`Open ${a.name}`}
+                className="block w-full aspect-[2/3] rounded-md overflow-hidden bg-bg border border-border
+                            hover:border-accent transition-colors"
+              >
                 {tmdbImg.profile(a.profile_path) ? (
                   <img
                     src={tmdbImg.profile(a.profile_path)!}
@@ -87,7 +98,7 @@ function FavoriteActorsPanel() {
                     {a.name}
                   </div>
                 )}
-              </div>
+              </button>
               <div className="text-[11px] mt-1 font-semibold leading-tight line-clamp-2">{a.name}</div>
               <button
                 type="button"
@@ -102,6 +113,20 @@ function FavoriteActorsPanel() {
           ))}
         </div>
       )}
+      <PersonModal
+        personId={personId}
+        onClose={() => setPersonId(null)}
+        onSelectItem={(it) => {
+          setPersonId(null);
+          openItem(it);
+        }}
+      />
+      <DetailModal
+        tmdbId={detail?.id ?? null}
+        mediaType={detail?.type ?? null}
+        onClose={() => setDetail(null)}
+        onSelectItem={openItem}
+      />
     </section>
   );
 }

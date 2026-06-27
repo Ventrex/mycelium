@@ -147,6 +147,19 @@ def _has_blacklisted_person(media_type: str, tmdb_id: int | None, person_bl: set
     return any(pid in person_bl for pid in cast_ids)
 
 
+def _is_unreleased(item: dict) -> bool:
+    """True if the title's release/air date is in the future. We never auto-queue
+    unreleased titles: pre-release blockbusters attract fake/junk cached torrents
+    that would otherwise get a .strm and show in the library playing garbage.
+    An unknown/empty date is treated as released (the processor does a definitive
+    TMDB date check before accepting any release)."""
+    rd = (item.get("release_date") or "").strip()
+    if not rd:
+        return False
+    import datetime
+    return rd > datetime.date.today().isoformat()
+
+
 def _is_non_scripted_or_guest(item: dict) -> bool:
     """True for talk shows, news, reality TV, or a self/guest appearance - favoriting
     an actor should queue their actual acting roles, not every programme they once
@@ -211,7 +224,7 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
             media_bl = movie_bl if media_type == "movie" else tv_bl
             if item.get("tmdb_id") in media_bl or not _is_recent_or_upcoming(item):
                 continue
-            if _is_non_scripted_or_guest(item):
+            if _is_unreleased(item) or _is_non_scripted_or_guest(item):
                 continue
             queue_fn = _queue_movie if media_type == "movie" else _queue_series
             seen = seen_movies if media_type == "movie" else seen_series
@@ -275,6 +288,8 @@ def _fill_media_type(media_type: str, queue_fn, seen: set[str], media_bl: set[in
                     break
                 scanned += 1
                 if item.get("tmdb_id") in media_bl:
+                    continue
+                if _is_unreleased(item):
                     continue
                 if not _passes_filters(item, rule.get("min_votes")):
                     skipped_filter += 1

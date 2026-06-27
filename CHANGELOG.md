@@ -11,8 +11,11 @@ All notable changes to Mycelium are documented in this file.
 - **Per-release blacklist**: a "Wrong release" button on the detail view for any movie already in the library lets you reject just the current release (e.g. 4K but Russian audio) without removing the title - the release is blacklisted, its TorBox torrent is dropped, and a fresh search for a different release runs immediately.
 - **Audio language preserved on auto-upgrade**: the resolution auto-upgrade job no longer swaps in a higher-quality release whose audio language doesn't match what's currently playing (untagged releases are treated as English; multi-audio releases are always compatible). Fixes a 1080p English release silently being "upgraded" to a 4K release dubbed in another language.
 
+- **Favorite actors are clickable**: favorite-actor posters on the Auto-Approve page now open the actor's page and filmography (previously only a Remove button).
+
 ### Fixed
 
+- **Unreleased movies got a .strm and showed in the library**: pre-release blockbusters (e.g. an unreleased Moana sequel) attract fake/junk cached torrents that the lazy path accepted, writing a `.strm` that appeared in Jellyfin and played garbage. Auto-approve now skips titles whose release/air date is in the future, and the processor refuses any movie that TMDB reports is not released yet (marking it `upcoming` to recheck later).
 - **OpenSubtitles 406 errors hid the real reason**: download failures only logged the generic HTTP status, not OpenSubtitles' own error message (e.g. "daily quota exceeded"); now surfaced in the log line.
 - **Auto-Approve reported success even when nothing was added**: the daily genre-fill job logged "N item(s) queued" and counted it against the per-genre/daily cap based only on whether `processor.process()` raised an exception, not its actual return value, so titles that ended up `wanted`/`failed`/`rate_limited` were silently counted as successes, capping the run early instead of trying more candidates.
 - **Jellyfin library refresh spammed on every new .strm**: every new request, upgrade, or cleanup pass triggered its own `/Library/Refresh` call regardless of whether one had just run or Jellyfin was already mid-scan. Refreshes are now debounced (coalesced within a 60s window) and skipped entirely while Jellyfin reports a scan already in progress.
