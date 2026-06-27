@@ -91,6 +91,12 @@ _INT_KEYS = {
     "AUTO_APPROVE_PER_GENRE_LIMIT",
     "AUTO_APPROVE_MAX_PAGES",
 }
+# Keys whose stored override must be parsed as a float, not left as a string.
+# A missing entry here means a DB override silently shadows the .env float with a
+# str, which then blows up any numeric comparison (e.g. rating < min_rating).
+_FLOAT_KEYS = {
+    "AUTO_ADD_MIN_RATING",
+}
 
 # Keys that take effect on the next access (no restart).
 HOT_RELOAD = {
@@ -286,6 +292,11 @@ def _coerce(key: str, raw: str | None):
             return int(raw)
         except (TypeError, ValueError):
             return None
+    if key in _FLOAT_KEYS:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
     return raw
 
 
@@ -340,6 +351,7 @@ def all_for_ui() -> list[dict]:
                 "bool" if key in _BOOL_KEYS
                 else "list" if key in _LIST_KEYS
                 else "int" if key in _INT_KEYS
+                else "float" if key in _FLOAT_KEYS
                 else "str"
             )
             items.append({
