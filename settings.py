@@ -223,7 +223,7 @@ SETTING_GROUPS = [
     },
     {
         "id": "auto_approve",
-        "title": "Auto-Approve daily fill",
+        "title": "Auto-Approve daily fill (MOVIE = total budget, TV = max series share)",
         "category": "automation",
         "keys": [
             "AUTO_APPROVE_DAILY_LIMIT_MOVIE", "AUTO_APPROVE_DAILY_LIMIT_TV",
