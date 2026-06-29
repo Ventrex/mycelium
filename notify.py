@@ -108,21 +108,27 @@ def _telegram(token: str, chat_id: str, title: str, message: str, success: bool)
 
 def test() -> dict:
     results = {}
-    discord_url = settings.get("DISCORD_WEBHOOK_URL", "")
+    discord_url = (settings.get("DISCORD_WEBHOOK_URL", "") or "").strip()
     tg_token = settings.get("TELEGRAM_BOT_TOKEN", "")
     tg_chat = settings.get("TELEGRAM_CHAT_ID", "")
-    if discord_url:
+    discord_targets = {
+        "discord": discord_url,
+        "discord_movies": (settings.get("DISCORD_WEBHOOK_URL_MOVIES", "") or "").strip(),
+        "discord_shows": (settings.get("DISCORD_WEBHOOK_URL_SHOWS", "") or "").strip(),
+    }
+    for key, url in discord_targets.items():
+        if not url:
+            results[key] = "not configured"
+            continue
         try:
             r = requests.post(
-                discord_url,
+                url,
                 json={"content": "🧪 Test notification from Mycelium"},
                 timeout=10,
             )
-            results["discord"] = "ok" if r.status_code < 400 else f"http {r.status_code}"
+            results[key] = "ok" if r.status_code < 400 else f"http {r.status_code}"
         except Exception as exc:
-            results["discord"] = str(exc)[:100]
-    else:
-        results["discord"] = "not configured"
+            results[key] = str(exc)[:100]
     if tg_token and tg_chat:
         try:
             url = f"https://api.telegram.org/bot{tg_token}/sendMessage"

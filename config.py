@@ -98,6 +98,8 @@ LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL", "")
+DISCORD_WEBHOOK_URL_MOVIES = _env("DISCORD_WEBHOOK_URL_MOVIES", "")
+DISCORD_WEBHOOK_URL_SHOWS = _env("DISCORD_WEBHOOK_URL_SHOWS", "")
 TELEGRAM_BOT_TOKEN = _env("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = _env("TELEGRAM_CHAT_ID", "")
 NOTIFY_ON_SUCCESS = _env("NOTIFY_ON_SUCCESS", "true").lower() in ("1", "true", "yes")
@@ -165,22 +167,28 @@ AUTO_ADD_MIN_VOTES = _env_int("AUTO_ADD_MIN_VOTES", 100)
 AUTO_ADD_REGION = _env("AUTO_ADD_REGION", "NL")
 
 # Per-genre auto-approve rules (configured in the Auto-Approve tab, stored in
-# settings). 0 disables the periodic auto-request-trending scan.
+# settings). Use AUTO_APPROVE_SCHEDULE_MODE=disabled to stop automatic runs.
 AUTO_APPROVE_CHECK_INTERVAL_HOURS = _env_int("AUTO_APPROVE_CHECK_INTERVAL_HOURS", 12)
-# Run the auto-approve scan once per day at this hour (local time) instead of on
-# a fixed interval, and cap how many new titles it queues per run so a single
-# day can't flood TorBox. Set the limit to 0 for no cap.
+# Runtime-editable scheduler settings. Legacy AUTO_APPROVE_CHECK_INTERVAL_HOURS
+# and AUTO_APPROVE_DAILY_HOUR remain for older deployments, but the scheduler
+# now reads these keys from the settings DB so no code/.env edit is needed.
+AUTO_APPROVE_SCHEDULE_MODE = _env("AUTO_APPROVE_SCHEDULE_MODE", "daily_time")
+AUTO_APPROVE_INTERVAL_HOURS = _env_int("AUTO_APPROVE_INTERVAL_HOURS", AUTO_APPROVE_CHECK_INTERVAL_HOURS)
 AUTO_APPROVE_DAILY_HOUR = _env_int("AUTO_APPROVE_DAILY_HOUR", 4)
-# Movies and series each get their own independent daily cap (neither starves
-# the other, and an empty movie quota never rolls over into series or vice
-# versa). Lower these once the library is built up. 0 means no cap.
+# Legacy daily caps retained for backwards compatibility and favorite-actor
+# queueing. Genre auto-fill uses the per-genre settings below instead.
 AUTO_APPROVE_DAILY_LIMIT_MOVIE = _env_int("AUTO_APPROVE_DAILY_LIMIT_MOVIE", 100)
 AUTO_APPROVE_DAILY_LIMIT_TV = _env_int("AUTO_APPROVE_DAILY_LIMIT_TV", 100)
-# How many new titles a single genre may contribute per run, and how many TMDB
-# discover pages to scan per genre (20 results each) to find that many. The
-# daily limits above are the real ceiling; these just spread the budget and
-# make sure the scan looks past the same top-20 popular titles every run.
+# How many new titles each movie/show genre may contribute per run, and how many
+# TMDB discover pages to scan per genre (20 results each) to find that many. The
+# legacy AUTO_APPROVE_PER_GENRE_LIMIT remains a fallback for old configs.
 AUTO_APPROVE_PER_GENRE_LIMIT = _env_int("AUTO_APPROVE_PER_GENRE_LIMIT", 50)
+AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT = _env_int(
+    "AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT", AUTO_APPROVE_PER_GENRE_LIMIT
+)
+AUTO_APPROVE_TV_PER_GENRE_LIMIT = _env_int(
+    "AUTO_APPROVE_TV_PER_GENRE_LIMIT", AUTO_APPROVE_PER_GENRE_LIMIT
+)
 AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
