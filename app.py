@@ -38,8 +38,6 @@ import upgrader
 import watchdog
 import zilean
 from config import (
-    AUTO_APPROVE_CHECK_INTERVAL_HOURS,
-    AUTO_APPROVE_DAILY_HOUR,
     AUTO_UPGRADE_ENABLED,
     AUTO_UPGRADE_INTERVAL_HOURS,
     BACKUP_INTERVAL_HOURS,
@@ -215,6 +213,86 @@ def ui_api_me_password():
     return jsonify(ok=True)
 
 
+AUTO_APPROVE_JOB_ID = "auto_approve_scan"
+AUTO_APPROVE_SCHEDULE_MODES = {"disabled", "hourly", "every_x_hours", "daily_time"}
+
+
+def _auto_approve_schedule_settings() -> dict:
+    mode = str(_settings_mod.get("AUTO_APPROVE_SCHEDULE_MODE", "daily_time") or "daily_time").strip()
+    if mode not in AUTO_APPROVE_SCHEDULE_MODES:
+        mode = "daily_time"
+    try:
+        interval_hours = int(_settings_mod.get("AUTO_APPROVE_INTERVAL_HOURS", 12) or 12)
+    except (TypeError, ValueError):
+        interval_hours = 12
+    interval_hours = max(interval_hours, 1)
+    daily_time = str(_settings_mod.get("AUTO_APPROVE_DAILY_TIME", "04:00") or "04:00").strip()
+    match = re.match(r"^(\d{1,2}):(\d{2})$", daily_time)
+    if match:
+        hour = min(max(int(match.group(1)), 0), 23)
+        minute = min(max(int(match.group(2)), 0), 59)
+    else:
+        hour, minute = 4, 0
+    return {
+        "mode": mode,
+        "interval_hours": interval_hours,
+        "daily_time": f"{hour:02d}:{minute:02d}",
+        "daily_hour": hour,
+        "daily_minute": minute,
+    }
+
+
+def _auto_approve_schedule_description(values: dict | None = None) -> str:
+    values = values or _auto_approve_schedule_settings()
+    mode = values["mode"]
+    if mode == "disabled":
+        return "Disabled"
+    if mode == "hourly":
+        return "Every hour"
+    if mode == "every_x_hours":
+        return f"Every {values['interval_hours']} hour(s)"
+    return f"Daily at {values['daily_time']}"
+
+
+def _configure_auto_approve_job(target_scheduler: BackgroundScheduler) -> dict:
+    values = _auto_approve_schedule_settings()
+    try:
+        target_scheduler.remove_job(AUTO_APPROVE_JOB_ID)
+    except Exception:
+        pass
+
+    mode = values["mode"]
+    if mode == "disabled":
+        log.info("Auto-approve scheduler disabled")
+    elif mode == "hourly":
+        target_scheduler.add_job(
+            auto_approve.run,
+            trigger="interval", hours=1,
+            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            max_instances=1,
+        )
+        log.info("Scheduled auto-approve scan every hour")
+    elif mode == "every_x_hours":
+        target_scheduler.add_job(
+            auto_approve.run,
+            trigger="interval", hours=values["interval_hours"],
+            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            max_instances=1,
+        )
+        log.info("Scheduled auto-approve scan every %dh", values["interval_hours"])
+    else:
+        target_scheduler.add_job(
+            auto_approve.run,
+            trigger="cron", hour=values["daily_hour"], minute=values["daily_minute"],
+            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            max_instances=1,
+        )
+        log.info("Scheduled daily auto-approve scan at %s", values["daily_time"])
+
+    values["description"] = _auto_approve_schedule_description(values)
+    return values
+
+
 def _start_scheduler() -> BackgroundScheduler:
     # job_defaults: every interval job gets +/-60s jitter to avoid stampede when
     # multiple long-running jobs hit the same minute mark.
@@ -359,15 +437,7 @@ def _start_scheduler() -> BackgroundScheduler:
             log.info("Scheduled auto-add every %dh (total slots: %d)",
                      TRENDING_CHECK_INTERVAL_HOURS, _auto_add_total)
 
-        if AUTO_APPROVE_CHECK_INTERVAL_HOURS > 0:
-            # Run once a day at a fixed hour. A 7-minute offset keeps it off the
-            # exact hour mark so it doesn't pile onto other top-of-hour jobs.
-            scheduler.add_job(
-                auto_approve.run,
-                trigger="cron", hour=AUTO_APPROVE_DAILY_HOUR, minute=7,
-                id="auto_approve_scan", next_run_time=None,
-            )
-            log.info("Scheduled daily auto-approve scan at %02d:07", AUTO_APPROVE_DAILY_HOUR)
+        _configure_auto_approve_job(scheduler)
 
         if CONTINUE_WATCHING_INTERVAL_MINUTES > 0:
             scheduler.add_job(
@@ -2131,12 +2201,79 @@ def ui_api_auto_approve_rules_set():
     return jsonify(status="saved")
 
 
+@app.get("/ui/api/auto-approve-settings")
+def ui_api_auto_approve_settings_get():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    values = _auto_approve_schedule_settings()
+    return jsonify(
+        schedule=values,
+        description=_auto_approve_schedule_description(values),
+        movie_per_genre_limit=_settings_mod.get("AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT"),
+        tv_per_genre_limit=_settings_mod.get("AUTO_APPROVE_TV_PER_GENRE_LIMIT"),
+        max_pages=_settings_mod.get("AUTO_APPROVE_MAX_PAGES"),
+    )
+
+
+@app.post("/ui/api/auto-approve-settings")
+def ui_api_auto_approve_settings_set():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    payload = request.get_json(silent=True) or {}
+    mode = str(payload.get("schedule_mode") or "daily_time").strip()
+    if mode not in AUTO_APPROVE_SCHEDULE_MODES:
+        return jsonify(error="invalid schedule_mode"), 400
+
+    def _positive_int(key: str, default: int) -> int:
+        try:
+            value = int(payload.get(key, default))
+        except (TypeError, ValueError):
+            raise ValueError(key)
+        if value < 1:
+            raise ValueError(key)
+        return value
+
+    try:
+        interval_hours = _positive_int("interval_hours", 12)
+        movie_limit = _positive_int("movie_per_genre_limit", 50)
+        tv_limit = _positive_int("tv_per_genre_limit", 50)
+        max_pages = _positive_int("max_pages", 10)
+    except ValueError as exc:
+        return jsonify(error=f"{exc.args[0]} must be a positive integer"), 400
+
+    daily_time = str(payload.get("daily_time") or "04:00").strip()
+    if not re.match(r"^\d{1,2}:\d{2}$", daily_time):
+        return jsonify(error="daily_time must be HH:MM"), 400
+    hour_s, minute_s = daily_time.split(":", 1)
+    hour, minute = int(hour_s), int(minute_s)
+    if hour > 23 or minute > 59:
+        return jsonify(error="daily_time must be HH:MM"), 400
+    daily_time = f"{hour:02d}:{minute:02d}"
+
+    _settings_mod.set("AUTO_APPROVE_SCHEDULE_MODE", mode)
+    _settings_mod.set("AUTO_APPROVE_INTERVAL_HOURS", interval_hours)
+    _settings_mod.set("AUTO_APPROVE_DAILY_TIME", daily_time)
+    _settings_mod.set("AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT", movie_limit)
+    _settings_mod.set("AUTO_APPROVE_TV_PER_GENRE_LIMIT", tv_limit)
+    _settings_mod.set("AUTO_APPROVE_MAX_PAGES", max_pages)
+
+    values = _configure_auto_approve_job(scheduler)
+    return jsonify(
+        status="saved",
+        schedule=values,
+        description=_auto_approve_schedule_description(values),
+        movie_per_genre_limit=movie_limit,
+        tv_per_genre_limit=tv_limit,
+        max_pages=max_pages,
+    )
+
+
 @app.post("/ui/api/auto-approve-rules/run-now")
 def ui_api_auto_approve_run_now():
     if not auth.is_admin():
         return jsonify(error="unauthorized"), 401
-    threading.Thread(target=auto_approve.run, name="auto-approve-manual", daemon=True).start()
-    return jsonify(status="started")
+    summary = auto_approve.run()
+    return jsonify(status="complete", **summary)
 
 
 @app.get("/ui/api/content-blacklist")
@@ -2630,8 +2767,111 @@ def ui_api_session():
         "library_click_jellyfin": bool(rec.get("library_click_jellyfin")),
     }
     user.update(plugin_loader.session_fields(rec))
+    selected_profile = None
+    profiles_required = False
+    if rec.get("id"):
+        from flask import session as _session
+        db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+        profiles = db.list_profiles(rec["id"])
+        profiles_required = bool(profiles)
+        selected_id = _session.get("profile_id")
+        if selected_id:
+            profile = db.get_profile(int(selected_id))
+            if profile and profile.get("user_id") == rec.get("id"):
+                selected_profile = profile
+            else:
+                _session.pop("profile_id", None)
     jellyfin_url = (_settings.get("JELLYFIN_URL") or cfg.JELLYFIN_URL or "").rstrip("/")
-    return jsonify(authenticated=True, user=user, jellyfin_url=jellyfin_url or None)
+    return jsonify(
+        authenticated=True,
+        user=user,
+        selected_profile=selected_profile,
+        profiles_required=profiles_required and selected_profile is None,
+        jellyfin_url=jellyfin_url or None,
+    )
+
+
+@app.get("/ui/api/profiles")
+def ui_api_profiles_get():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(profiles=[], selected_profile=None)
+    from flask import session as _session
+    db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+    profiles = db.list_profiles(rec["id"])
+    selected_profile = None
+    selected_id = _session.get("profile_id")
+    if selected_id:
+        selected_profile = db.get_profile(int(selected_id))
+        if not selected_profile or selected_profile.get("user_id") != rec.get("id"):
+            selected_profile = None
+            _session.pop("profile_id", None)
+    return jsonify(profiles=profiles, selected_profile=selected_profile)
+
+
+@app.post("/ui/api/profiles")
+def ui_api_profiles_create():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    payload = request.get_json(silent=True) or {}
+    profile_id = db.create_profile(
+        rec["id"],
+        payload.get("name") or "Profile",
+        payload.get("avatar") or "👤",
+        payload.get("age_rating") or "all",
+        bool(payload.get("kids_mode")),
+    )
+    return jsonify(profile=db.get_profile(profile_id))
+
+
+@app.post("/ui/api/profiles/select")
+def ui_api_profiles_select():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    payload = request.get_json(silent=True) or {}
+    profile = db.get_profile(int(payload.get("id") or 0))
+    if not profile or profile.get("user_id") != rec.get("id"):
+        return jsonify(error="profile not found"), 404
+    from flask import session as _session
+    _session["profile_id"] = profile["id"]
+    return jsonify(status="selected", selected_profile=profile)
+
+
+@app.post("/ui/api/profiles/<int:profile_id>/update")
+def ui_api_profiles_update(profile_id: int):
+    rec = auth.current_user_record()
+    profile = db.get_profile(profile_id)
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    if not profile or (profile.get("user_id") != rec.get("id") and rec.get("role") != "admin"):
+        return jsonify(error="profile not found"), 404
+    payload = request.get_json(silent=True) or {}
+    db.update_profile(
+        profile_id,
+        name=payload.get("name"),
+        avatar=payload.get("avatar"),
+        age_rating=payload.get("age_rating"),
+        kids_mode=payload.get("kids_mode") if "kids_mode" in payload else None,
+    )
+    return jsonify(profile=db.get_profile(profile_id))
+
+
+@app.post("/ui/api/profiles/<int:profile_id>/delete")
+def ui_api_profiles_delete(profile_id: int):
+    rec = auth.current_user_record()
+    profile = db.get_profile(profile_id)
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    if not profile or (profile.get("user_id") != rec.get("id") and rec.get("role") != "admin"):
+        return jsonify(error="profile not found"), 404
+    db.delete_profile(profile_id)
+    from flask import session as _session
+    if _session.get("profile_id") == profile_id:
+        _session.pop("profile_id", None)
+    db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+    return jsonify(status="deleted")
 
 
 @app.get("/ui/api/plugins")

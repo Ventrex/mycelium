@@ -14,6 +14,7 @@ import type {
   LanguagePrefs,
   DiscoverPrefs,
   AutoApproveRules,
+  AutoApproveSettings,
   TmdbPerson,
   PersonDetail,
   Collection,
@@ -21,6 +22,7 @@ import type {
   ContentBlacklistItem,
   FavoriteActor,
   SubtitleItem,
+  Profile,
 } from './types';
 
 const csrfToken = (): string => {
@@ -147,7 +149,27 @@ export const api = {
       body: JSON.stringify({ media_type: type, rules }),
     }),
   autoApproveRunNow: () =>
-    http<{ status: string }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+    http<{
+      status: string;
+      movies_queued: number;
+      series_queued: number;
+      total_queued: number;
+      genres?: Record<string, unknown[]>;
+    }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+  autoApproveSettingsGet: () =>
+    http<AutoApproveSettings>('/ui/api/auto-approve-settings'),
+  autoApproveSettingsSet: (settings: {
+    schedule_mode: AutoApproveSettings['schedule']['mode'];
+    interval_hours: number;
+    daily_time: string;
+    movie_per_genre_limit: number;
+    tv_per_genre_limit: number;
+    max_pages: number;
+  }) =>
+    http<AutoApproveSettings & { status: string }>('/ui/api/auto-approve-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
 
   // Content blacklist (movies / shows / actors)
   contentBlacklist: (kind?: BlacklistKind) =>
@@ -281,6 +303,26 @@ export const api = {
   libraryMovies: () => http<{ items: any[] }>('/ui/api/library/movies'),
   recent: () => http<{ items: any[] }>('/ui/api/activity'),
   myRequests: () => http<{ items: any[] }>('/ui/api/user-requests?mine=1'),
+
+  // Profiles
+  profiles: () => http<{ profiles: Profile[]; selected_profile: Profile | null }>('/ui/api/profiles'),
+  profileCreate: (profile: { name: string; avatar: string; age_rating: Profile['age_rating']; kids_mode: boolean }) =>
+    http<{ profile: Profile }>('/ui/api/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  profileSelect: (id: number) =>
+    http<{ status: string; selected_profile: Profile }>('/ui/api/profiles/select', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  profileUpdate: (id: number, profile: Partial<Pick<Profile, 'name' | 'avatar' | 'age_rating' | 'kids_mode'>>) =>
+    http<{ profile: Profile }>(`/ui/api/profiles/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  profileDelete: (id: number) =>
+    http<{ status: string }>(`/ui/api/profiles/${id}/delete`, { method: 'POST' }),
 
   // Arr import
   arrTest: (kind: 'radarr' | 'sonarr') =>
