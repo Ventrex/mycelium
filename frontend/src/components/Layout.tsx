@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
@@ -8,9 +8,7 @@ const navItems = [
   { to: '/shows', label: 'Shows', icon: '📺' },
   { to: '/movies', label: 'Movies', icon: '🎬' },
   { to: '/library', label: 'Library', icon: '📚' },
-  { to: '/subtitles', label: 'Subtitles', icon: '💬' },
   { to: '/watchlist', label: 'Watchlist', icon: '★' },
-  { to: '/search', label: 'Search', icon: '🔍' },
   { to: '/requests', label: 'My Requests', icon: '📋' },
   { to: '/wanted', label: 'Wanted', icon: '⏳' },
   { to: '/settings', label: 'Settings', icon: '🔌' },
@@ -19,8 +17,8 @@ const navItems = [
 const adminItems = [
   { to: '/auto-approve', label: 'Auto-Approve', icon: '🤖' },
   { to: '/blacklist', label: 'Blacklist', icon: '🚫' },
+  { to: '/subtitles', label: 'Subtitles', icon: '💬' },
   { to: '/admin', label: 'Admin', icon: '⚙️' },
-  { to: '/manual', label: 'Manual', icon: '📖' },
 ];
 
 export default function Layout() {
@@ -33,7 +31,6 @@ export default function Layout() {
   });
 
   const isAdmin = session?.user?.role === 'admin';
-  const showAdmin = isAdmin || !session?.authenticated;  // bootstrap visible
 
   return (
     <div className="min-h-screen flex bg-bg text-white">
@@ -65,21 +62,13 @@ export default function Layout() {
           </span>
         </div>
         <nav className="py-3">
-          <SidebarSection title="Browse" items={navItems} onClick={() => setDrawerOpen(false)} />
-          {showAdmin && (
+          <SidebarSection title="" items={navItems} onClick={() => setDrawerOpen(false)} />
+          {isAdmin && (
             <SidebarSection title="Manage" items={adminItems} onClick={() => setDrawerOpen(false)} />
           )}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border text-xs text-muted">
-          {session?.user ? (
-            <div className="flex items-center justify-between">
-              <span>👤 {session.user.username}</span>
-              <a href="/logout" className="hover:text-white">Log out</a>
-            </div>
-          ) : (
-            <a href="/login" className="hover:text-white">Sign in</a>
-          )}
-          <div className="mt-2 text-center text-[10px] opacity-50">v0.2.0-beta</div>
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border text-center text-[10px] text-muted opacity-50">
+          v0.2.0-beta
         </div>
       </aside>
       {/* Drawer overlay */}
@@ -105,7 +94,10 @@ export default function Layout() {
             </button>
             <Breadcrumb path={location.pathname} />
             <div className="ml-auto flex items-center gap-2">
+              <TopbarIconLink to="/search" label="Search" icon="🔍" />
+              <TopbarIconLink to="/manual" label="Manual" icon="📖" />
               {session?.user && <RegionPicker region={session.user.region || 'NL'} />}
+              <ProfileMenu username={session?.user?.username} />
             </div>
           </div>
         </header>
@@ -162,6 +154,75 @@ function SidebarSection({
             <span>{item.label}</span>
           </NavLink>
         )
+      )}
+    </div>
+  );
+}
+
+
+function TopbarIconLink({ to, label, icon }: { to: string; label: string; icon: string }) {
+  return (
+    <Link
+      to={to}
+      className="flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:border-accent/50 hover:bg-card transition"
+      title={label}
+      aria-label={label}
+    >
+      <span aria-hidden="true">{icon}</span>
+    </Link>
+  );
+}
+
+function ProfileMenu({ username }: { username?: string }) {
+  const [open, setOpen] = useState(false);
+
+  if (!username) {
+    return (
+      <a
+        href="/login"
+        className="px-3 py-1.5 rounded-lg border border-border text-sm text-muted hover:text-white hover:border-accent/50 transition"
+      >
+        Sign in
+      </a>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:border-accent/50 hover:bg-card transition"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={username}
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-xs">👤</span>
+        <span className="hidden md:inline max-w-28 truncate text-sm">{username}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 w-44 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+            <Link
+              to="/settings"
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white"
+            >
+              Settings
+            </Link>
+            <Link
+              to="/manual"
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white"
+            >
+              Manual
+            </Link>
+            <a href="/logout" className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white">
+              Log out
+            </a>
+          </div>
+        </>
       )}
     </div>
   );
