@@ -3244,7 +3244,10 @@ def _spa_index():
         '<meta name="csrf-token" content="" />',
         f'<meta name="csrf-token" content="{token}" />',
     )
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    return html, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, max-age=0",
+    }
 
 
 @app.get("/")
