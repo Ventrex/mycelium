@@ -90,6 +90,23 @@ export interface AutoApproveRule {
 
 export type AutoApproveRules = Record<string, AutoApproveRule>;
 
+export type AutoApproveScheduleMode = 'disabled' | 'hourly' | 'every_x_hours' | 'daily_time';
+
+export interface AutoApproveSettings {
+  schedule: {
+    mode: AutoApproveScheduleMode;
+    interval_hours: number;
+    daily_time: string;
+    daily_hour?: number;
+    daily_minute?: number;
+    description?: string;
+  };
+  description: string;
+  movie_per_genre_limit: number;
+  tv_per_genre_limit: number;
+  max_pages: number;
+}
+
 export interface TmdbPerson {
   tmdb_id: number;
   media_type: 'person';
@@ -178,9 +195,23 @@ export interface UserRequest {
   created_at: string;
 }
 
+
+export interface Profile {
+  id: number;
+  user_id: number;
+  name: string;
+  avatar: string;
+  age_rating: 'all' | '6' | '9' | '12' | '16' | '18';
+  kids_mode: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SessionInfo {
   authenticated: boolean;
   jellyfin_url?: string | null;
+  profiles_required?: boolean;
+  selected_profile?: Profile | null;
   user?: {
     id: number;
     username: string;

@@ -40,6 +40,35 @@ class IgnoreEvent(Exception):
     """Raised when the webhook event is informational and should not be acted on."""
 
 
+
+def resolve_display_title(imdb_id: str, media_type: str, tmdb_id: int | None = None) -> str | None:
+    """Best-effort IMDb/TMDB -> readable title for user-facing text.
+
+    This keeps raw `tt...` IDs out of Discord titles, DB rows created from
+    minimal webhooks, and manual requests whenever TMDB metadata is available.
+    """
+    try:
+        details = tmdb.get_notification_details(
+            imdb_id, media_type, tmdb_id=tmdb_id, seasons=None
+        )
+    except Exception as exc:
+        log.debug("Title lookup skipped for %s: %s", imdb_id, exc)
+        return None
+    if not details:
+        return None
+    title = details.get("title")
+    if not title:
+        return None
+    year = details.get("year")
+    return f"{title} ({year})" if year else title
+
+
+def _needs_title_lookup(title: str | None, imdb_id: str) -> bool:
+    if not title:
+        return True
+    clean = title.strip()
+    return clean == imdb_id or bool(_IMDB_RE.fullmatch(clean))
+
 def _extract_imdb(payload: dict) -> str | None:
     media = payload.get("media") or {}
     for key in ("imdbId", "imdb_id", "imdb"):
@@ -154,6 +183,8 @@ def parse(payload: dict) -> MediaRequest:
         raise WebhookError("No IMDB id found in webhook payload or Seerr API")
 
     title = payload.get("subject") or media.get("title") or imdb_id
+    if _needs_title_lookup(title, imdb_id):
+        title = resolve_display_title(imdb_id, media_type, tmdb_id) or title
 
     if media_type == "series":
         seasons = _extract_seasons(payload) or seerr_seasons
