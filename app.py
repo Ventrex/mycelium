@@ -66,7 +66,7 @@ from config import (
     WEBHOOK_SECRET,
     configure_logging,
 )
-from webhook_parser import IgnoreEvent, MediaRequest, WebhookError, parse
+from webhook_parser import IgnoreEvent, MediaRequest, WebhookError, parse, resolve_display_title
 
 configure_logging()
 log_buffer.install()
@@ -838,12 +838,13 @@ def ui_submit():
     if media_type == "series" and not seasons:
         seasons = [1]
 
+    display_title = resolve_display_title(imdb_id, media_type) or imdb_id
     media_request = MediaRequest(
-        title=imdb_id, media_type=media_type, imdb_id=imdb_id, seasons=seasons,
+        title=display_title, media_type=media_type, imdb_id=imdb_id, seasons=seasons,
     )
     threading.Thread(target=processor.process, args=(media_request,),
                      name=f"manual-{imdb_id}", daemon=True).start()
-    flash(f"Queued: {imdb_id} ({media_type})", "ok")
+    flash(f"Queued: {display_title} ({media_type})", "ok")
     return redirect(url_for("ui_dashboard"))
 
 
@@ -865,13 +866,14 @@ def ui_search_episode():
 @app.post("/ui/download-movie")
 def ui_download_movie():
     imdb_id = request.form.get("imdb_id", "")
+    display_title = resolve_display_title(imdb_id, "movie") or imdb_id
     media_request = MediaRequest(
-        title=imdb_id, media_type="movie", imdb_id=imdb_id, seasons=[],
+        title=display_title, media_type="movie", imdb_id=imdb_id, seasons=[],
     )
     db.update_media_item_status(imdb_id, "movie", "processing")
     threading.Thread(target=processor.process, args=(media_request,),
                      name=f"movie-{imdb_id}", daemon=True).start()
-    flash(f"Download queued for {imdb_id}", "ok")
+    flash(f"Download queued for {display_title}", "ok")
     return redirect(url_for("ui_dashboard") + "#movies")
 
 

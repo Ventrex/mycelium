@@ -606,3 +606,96 @@ NL_PROVIDERS = {
     "npo_plus": 271,
     "skyshowtime": 1773,
 }
+
+
+def get_notification_details(imdb_id: str | None, media_type: str = "movie",
+                             seasons: list[int] | None = None,
+                             tmdb_id: int | None = None) -> dict | None:
+    """Return rich metadata for notifications, resolved from an IMDb ID.
+
+    The result is intentionally presentation-ready so notification backends can
+    stay small and consistent. Missing values are omitted rather than raising.
+    """
+    kind = "movie" if media_type == "movie" else "tv"
+    found = {}
+    if not tmdb_id:
+        if not imdb_id:
+            return None
+        data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+        if not data:
+            return None
+        key = "movie_results" if kind == "movie" else "tv_results"
+        results = data.get(key) or []
+        if not results:
+            return None
+        found = results[0]
+        tmdb_id = found.get("id")
+        if not tmdb_id:
+            return None
+
+    detail = _get(f"/{kind}/{tmdb_id}", params={"append_to_response": "credits"}) or {}
+    title = detail.get("title") or detail.get("name") or found.get("title") or found.get("name") or imdb_id
+    date_value = (
+        detail.get("release_date") or detail.get("first_air_date")
+        or found.get("release_date") or found.get("first_air_date") or ""
+    )
+    runtime_minutes = detail.get("runtime")
+    if not runtime_minutes and kind == "tv":
+        runtimes = detail.get("episode_run_time") or []
+        runtime_minutes = runtimes[0] if runtimes else None
+
+    actors = []
+    for cast in ((detail.get("credits") or {}).get("cast") or [])[:5]:
+        name = cast.get("name")
+        if name:
+            actors.append(name)
+
+    poster_path = detail.get("poster_path") or found.get("poster_path")
+    season_summary = None
+    if kind == "tv":
+        season_numbers = [s.get("season_number") for s in (detail.get("seasons") or [])]
+        season_numbers = [s for s in season_numbers if isinstance(s, int) and s > 0]
+        requested = []
+        for season in seasons or []:
+            try:
+                season_num = int(season)
+            except (TypeError, ValueError):
+                continue
+            if season_num > 0:
+                requested.append(season_num)
+        requested = sorted(set(requested))
+        total = detail.get("number_of_seasons") or len(season_numbers) or None
+        bits = []
+        if total:
+            bits.append(f"{total} seizoen{'en' if total != 1 else ''}")
+        if requested:
+            bits.append("aangevraagd: " + ", ".join(f"S{s:02d}" for s in requested))
+        elif season_numbers:
+            bits.append("beschikbaar: " + ", ".join(f"S{s:02d}" for s in season_numbers[:12]))
+        season_summary = " · ".join(bits) if bits else None
+
+    return {
+        "imdb_id": imdb_id or (detail.get("external_ids") or {}).get("imdb_id"),
+        "tmdb_id": tmdb_id,
+        "media_type": media_type,
+        "title": title,
+        "year": date_value[:4] or None,
+        "runtime": _format_runtime(runtime_minutes),
+        "actors": actors,
+        "overview": detail.get("overview") or found.get("overview") or "",
+        "poster_url": f"https://image.tmdb.org/t/p/w342{poster_path}" if poster_path else None,
+        "season_summary": season_summary,
+        "url": f"https://www.themoviedb.org/{kind}/{tmdb_id}",
+    }
+
+
+def _format_runtime(minutes: int | float | None) -> str | None:
+    if not minutes:
+        return None
+    minutes = int(minutes)
+    hours, mins = divmod(minutes, 60)
+    if hours and mins:
+        return f"{hours}u {mins}m"
+    if hours:
+        return f"{hours}u"
+    return f"{mins}m"
