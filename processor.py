@@ -586,7 +586,14 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
         jellyfin.refresh_library()
         quality = winner.quality if winner else "?"
         db.log_activity("added", req.title, f"{req.media_type} · {quality}", True)
-        notify.send(f"Added: {req.title}", f"{req.media_type} · {quality} · {req.imdb_id}", True)
+        notify.send(
+            f"Added: {req.title}",
+            f"{req.media_type} · {quality}",
+            True,
+            imdb_id=req.imdb_id,
+            media_type=req.media_type,
+            seasons=req.seasons,
+        )
         # Metrics
         elapsed = time.monotonic() - started
         db.record_metric("latency_seconds", req.media_type, value_real=elapsed)
@@ -622,7 +629,14 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
         db.update_request(row_id, "failed", error=reason)
         log.warning("No content added (%s); skipping Jellyfin refresh for %s", reason, req.title)
         db.log_activity("failed", req.title, f"{reason} ({req.imdb_id})", False)
-        notify.send(f"Failed: {req.title}", f"No suitable stream found · {req.imdb_id}", False)
+        notify.send(
+            f"Failed: {req.title}",
+            "No suitable stream found",
+            False,
+            imdb_id=req.imdb_id,
+            media_type=req.media_type,
+            seasons=req.seasons,
+        )
         db.record_metric("request_failed", req.media_type, value_int=1)
         try:
             import metrics_prom
