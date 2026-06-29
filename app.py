@@ -3266,9 +3266,29 @@ def app_root():
     return _spa_index()
 
 
+def _send_spa_asset(filename: str):
+    # Vite assets are content-hashed. During upgrades, browsers can still ask
+    # for an older /assets/index-*.js or .css from cached HTML. If that file is
+    # gone (or was left as a zero-byte artifact), serve the current built asset
+    # of the same type instead of returning an empty response and blanking the SPA.
+    full = _os.path.join(_SPA_ASSET_DIR, filename)
+    if _os.path.isfile(full) and _os.path.getsize(full) > 0:
+        return _send(_SPA_ASSET_DIR, filename)
+    import glob as _glob
+    ext = ".js" if filename.endswith(".js") else ".css" if filename.endswith(".css") else ""
+    if filename.startswith("index-") and ext:
+        candidates = [p for p in _glob.glob(_os.path.join(_SPA_ASSET_DIR, f"index-*{ext}"))
+                      if _os.path.getsize(p) > 0]
+        if candidates:
+            newest = max(candidates, key=_os.path.getmtime)
+            log.warning("SPA asset %s missing/empty; serving fallback %s", filename, _os.path.basename(newest))
+            return _send(_SPA_ASSET_DIR, _os.path.basename(newest))
+    return _send(_SPA_ASSET_DIR, filename)
+
+
 @app.get("/app/assets/<path:filename>")
 def app_assets(filename: str):
-    return _send(_SPA_ASSET_DIR, filename)
+    return _send_spa_asset(filename)
 
 
 @app.get("/app/<path:subpath>")
@@ -3281,7 +3301,7 @@ def app_catchall(subpath: str):
 
 @app.get("/assets/<path:filename>")
 def root_assets(filename: str):
-    return _send(_SPA_ASSET_DIR, filename)
+    return _send_spa_asset(filename)
 
 
 _DOCS_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "docs")
