@@ -14,6 +14,7 @@ import type {
   LanguagePrefs,
   DiscoverPrefs,
   AutoApproveRules,
+  AutoApproveSettings,
   TmdbPerson,
   PersonDetail,
   Collection,
@@ -147,7 +148,27 @@ export const api = {
       body: JSON.stringify({ media_type: type, rules }),
     }),
   autoApproveRunNow: () =>
-    http<{ status: string }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+    http<{
+      status: string;
+      movies_queued: number;
+      series_queued: number;
+      total_queued: number;
+      genres?: Record<string, unknown[]>;
+    }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+  autoApproveSettingsGet: () =>
+    http<AutoApproveSettings>('/ui/api/auto-approve-settings'),
+  autoApproveSettingsSet: (settings: {
+    schedule_mode: AutoApproveSettings['schedule']['mode'];
+    interval_hours: number;
+    daily_time: string;
+    movie_per_genre_limit: number;
+    tv_per_genre_limit: number;
+    max_pages: number;
+  }) =>
+    http<AutoApproveSettings & { status: string }>('/ui/api/auto-approve-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
 
   // Content blacklist (movies / shows / actors)
   contentBlacklist: (kind?: BlacklistKind) =>
