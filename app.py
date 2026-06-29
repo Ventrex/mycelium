@@ -2135,8 +2135,8 @@ def ui_api_auto_approve_rules_set():
 def ui_api_auto_approve_run_now():
     if not auth.is_admin():
         return jsonify(error="unauthorized"), 401
-    threading.Thread(target=auto_approve.run, name="auto-approve-manual", daemon=True).start()
-    return jsonify(status="started")
+    summary = auto_approve.run()
+    return jsonify(status="complete", **summary)
 
 
 @app.get("/ui/api/content-blacklist")

@@ -89,6 +89,8 @@ _INT_KEYS = {
     "AUTO_APPROVE_DAILY_LIMIT_MOVIE",
     "AUTO_APPROVE_DAILY_LIMIT_TV",
     "AUTO_APPROVE_PER_GENRE_LIMIT",
+    "AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT",
+    "AUTO_APPROVE_TV_PER_GENRE_LIMIT",
     "AUTO_APPROVE_MAX_PAGES",
 }
 # Keys whose stored override must be parsed as a float, not left as a string.
@@ -148,7 +150,8 @@ HOT_RELOAD = {
     "NETFLIX_NL_TOP_COUNT", "PRIME_NL_TOP_COUNT", "DISNEY_NL_TOP_COUNT",
     "AUTO_ADD_MIN_RATING", "AUTO_ADD_MIN_VOTES", "AUTO_ADD_REGION",
     "AUTO_APPROVE_DAILY_LIMIT_MOVIE", "AUTO_APPROVE_DAILY_LIMIT_TV",
-    "AUTO_APPROVE_PER_GENRE_LIMIT", "AUTO_APPROVE_MAX_PAGES",
+    "AUTO_APPROVE_PER_GENRE_LIMIT", "AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT",
+    "AUTO_APPROVE_TV_PER_GENRE_LIMIT", "AUTO_APPROVE_MAX_PAGES",
     "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
     "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
 }
@@ -223,10 +226,11 @@ SETTING_GROUPS = [
     },
     {
         "id": "auto_approve",
-        "title": "Auto-Approve daily fill (MOVIE = total budget, TV = max series share)",
+        "title": "Auto-Approve per-genre fill",
         "category": "automation",
         "keys": [
             "AUTO_APPROVE_DAILY_LIMIT_MOVIE", "AUTO_APPROVE_DAILY_LIMIT_TV",
+            "AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT", "AUTO_APPROVE_TV_PER_GENRE_LIMIT",
             "AUTO_APPROVE_PER_GENRE_LIMIT", "AUTO_APPROVE_MAX_PAGES",
         ],
     },

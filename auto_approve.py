@@ -29,7 +29,9 @@ from config import (
     AUTO_APPROVE_DAILY_LIMIT_MOVIE,
     AUTO_APPROVE_DAILY_LIMIT_TV,
     AUTO_APPROVE_MAX_PAGES,
+    AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT,
     AUTO_APPROVE_PER_GENRE_LIMIT,
+    AUTO_APPROVE_TV_PER_GENRE_LIMIT,
 )
 from webhook_parser import MediaRequest
 
@@ -250,143 +252,173 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
     return movies_added, series_added
 
 
-def _genre_candidates(media_type: str, genre_id: int, rule: dict, media_bl: set[int],
-                       person_bl: set[int], max_pages: int):
-    """Lazily yield queue-ready (filtered, released, not-blacklisted) items for one
-    genre, fetching TMDB pages on demand. Pages are only fetched as the consumer
-    pulls items, so a round-robin caller never over-fetches a genre it stops early."""
+def _empty_genre_result(media_type: str, genre_id: int, target: int) -> dict:
+    return {
+        "media_type": media_type,
+        "genre_id": genre_id,
+        "target": target,
+        "scanned": 0,
+        "skipped": 0,
+        "queued": 0,
+        "exhausted": False,
+    }
+
+
+def _discover_genre_page(media_type: str, genre_id: int, rule: dict, page: int) -> list[dict]:
+    return tmdb.discover_by_genre(
+        media_type,
+        genre_id,
+        rule.get("year_from"),
+        rule.get("year_to"),
+        page=page,
+        region=AUTO_ADD_REGION,
+    )
+
+
+def _fill_genre(media_type: str, genre_id: int, rule: dict, target: int,
+                seen: set[str], media_bl: set[int], person_bl: set[int],
+                max_pages: int) -> dict:
+    """Fill one enabled genre to its own successful queue target.
+
+    Skips (already requested/monitored, blacklisted, unreleased, no IMDb, filter
+    misses, processor failures, etc.) are tracked for observability but never
+    count toward the target. The scan continues until `target` successful queues
+    have been made or TMDB pages are exhausted.
+    """
+    result = _empty_genre_result(media_type, genre_id, target)
+    queue_fn = _queue_movie if media_type == "movie" else _queue_series
+
+    if target <= 0:
+        result["exhausted"] = True
+        log.info(
+            "Auto-approve %s genre %s: scanned=%d skipped=%d queued=%d exhausted=%s",
+            media_type, genre_id, result["scanned"], result["skipped"],
+            result["queued"], result["exhausted"],
+        )
+        return result
+
     for page in range(1, max_pages + 1):
-        items = tmdb.discover_by_genre(media_type, genre_id, rule.get("year_from"),
-                                        rule.get("year_to"), page=page, region=AUTO_ADD_REGION)
+        items = _discover_genre_page(media_type, genre_id, rule, page)
         if not items:
-            return  # no more results in this genre/year window
+            result["exhausted"] = True
+            break
         for item in items:
+            if result["queued"] >= target:
+                break
+            result["scanned"] += 1
             try:
                 if item.get("tmdb_id") in media_bl:
+                    result["skipped"] += 1
                     continue
                 if _is_unreleased(item):
+                    result["skipped"] += 1
                     continue
                 if not _passes_filters(item, rule.get("min_votes")):
+                    result["skipped"] += 1
                     continue
                 if _has_blacklisted_person(media_type, item.get("tmdb_id"), person_bl):
+                    result["skipped"] += 1
                     continue
+                if queue_fn(item, seen):
+                    result["queued"] += 1
+                else:
+                    result["skipped"] += 1
             except Exception as exc:
+                result["skipped"] += 1
                 log.warning("Auto-approve: skipping %s after error: %s",
                             item.get("title") or item.get("tmdb_id"), exc)
-                continue
-            yield item
+        if result["queued"] >= target:
+            break
+    else:
+        result["exhausted"] = result["queued"] < target
+
+    log.info(
+        "Auto-approve %s genre %s: scanned=%d skipped=%d queued=%d exhausted=%s",
+        media_type, genre_id, result["scanned"], result["skipped"],
+        result["queued"], result["exhausted"],
+    )
+    return result
 
 
-def _fill_round_robin(total_cap: int | None, series_subcap: int | None,
-                       seen_movies: set[str], seen_series: set[str],
-                       movie_bl: set[int], tv_bl: set[int],
-                       person_bl: set[int]) -> tuple[int, int]:
-    """Fill the library from every genre with "Auto-fill trending" enabled, across
-    BOTH the Movies and Shows tabs, into a single shared budget of `total_cap`
-    titles. Genres are visited round-robin (one success per genre per round) so all
-    genres are represented at once instead of the first couple draining the budget.
-    `series_subcap` optionally limits how many of the total may be series.
+def _fill_per_genre(seen_movies: set[str], seen_series: set[str],
+                    movie_bl: set[int], tv_bl: set[int],
+                    person_bl: set[int]) -> dict:
+    """Fill every enabled movie and TV genre independently.
 
-    Note: the fill is gated on `auto_request_trending` alone, independent of
-    `enabled` (which only governs whether *manual* requests in that genre skip the
-    pending-approval queue). Returns (movies_added, series_added)."""
-    per_genre_limit = _settings.get("AUTO_APPROVE_PER_GENRE_LIMIT", AUTO_APPROVE_PER_GENRE_LIMIT)
+    Movie and TV genres have separate per-genre limits. There is deliberately no
+    shared movie+TV cap here, so films cannot starve series and one movie genre
+    cannot consume another genre's target.
+    """
+    movie_target = _settings.get("AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT", AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT)
+    tv_target = _settings.get("AUTO_APPROVE_TV_PER_GENRE_LIMIT", AUTO_APPROVE_TV_PER_GENRE_LIMIT)
     max_pages = _settings.get("AUTO_APPROVE_MAX_PAGES", AUTO_APPROVE_MAX_PAGES)
+    summary = {
+        "movies_queued": 0,
+        "series_queued": 0,
+        "total_queued": 0,
+        "genres": {"movie": [], "tv": []},
+    }
 
-    # One lazy candidate stream per eligible genre, movies and series together.
-    streams = []  # [media_type, genre_id, generator, queued_count]
-    for media_type in ("movie", "tv"):
-        media_bl = movie_bl if media_type == "movie" else tv_bl
-        for gid, rule in get_rules(media_type).items():
-            if not rule.get("auto_request_trending"):
-                continue
-            gen = _genre_candidates(media_type, int(gid), rule, media_bl, person_bl, max_pages)
-            streams.append([media_type, int(gid), gen, 0])
+    for media_type, target, seen, media_bl in (
+        ("movie", movie_target, seen_movies, movie_bl),
+        ("tv", tv_target, seen_series, tv_bl),
+    ):
+        rules = get_rules(media_type)
+        enabled = [(int(gid), rule) for gid, rule in rules.items() if rule.get("auto_request_trending")]
+        if not enabled:
+            log.info("Auto-approve: no %s genre has 'Auto-fill trending' enabled", media_type)
+            continue
+        log.info("Auto-approve: filling %d %s genre(s), per-genre target=%s, max_pages=%s",
+                 len(enabled), media_type, target, max_pages)
+        for gid, rule in enabled:
+            result = _fill_genre(media_type, gid, rule, target, seen, media_bl, person_bl, max_pages)
+            summary["genres"][media_type].append(result)
+            if media_type == "movie":
+                summary["movies_queued"] += result["queued"]
+            else:
+                summary["series_queued"] += result["queued"]
 
-    if not streams:
-        log.info("Auto-approve: no genre has 'Auto-fill trending' enabled on either the "
-                 "Movies or Shows tab; nothing to fill")
-        return 0, 0
-
-    log.info("Auto-approve: round-robin fill across %d genre(s), total cap=%s, series cap=%s",
-             len(streams), total_cap if total_cap is not None else "off",
-             series_subcap if series_subcap is not None else "off")
-
-    movies_added = series_added = 0
-    total = 0
-    progressed = True
-    while progressed and (total_cap is None or total < total_cap):
-        progressed = False
-        for s in streams:
-            if total_cap is not None and total >= total_cap:
-                break
-            media_type, genre_id, gen, qc = s
-            if qc >= per_genre_limit:
-                continue
-            is_movie = media_type == "movie"
-            if not is_movie and series_subcap is not None and series_added >= series_subcap:
-                continue
-            seen = seen_movies if is_movie else seen_series
-            queue_fn = _queue_movie if is_movie else _queue_series
-            # Pull from this genre until one title is actually queued (a False
-            # result means already-have or no cached release  -  keep pulling),
-            # or the genre's candidate stream runs dry.
-            for item in gen:
-                if queue_fn(item, seen):
-                    s[3] += 1
-                    total += 1
-                    progressed = True
-                    if is_movie:
-                        movies_added += 1
-                    else:
-                        series_added += 1
-                    break
-
-    log.info("Auto-approve fill done: %d movie(s) + %d series queued (%d total)",
-             movies_added, series_added, total)
-    return movies_added, series_added
+    summary["total_queued"] = summary["movies_queued"] + summary["series_queued"]
+    return summary
 
 
-def run(total_limit: int | None = None, tv_limit: int | None = None) -> int:
-    """Scheduled job: for every genre with auto_request_trending enabled (across
-    BOTH the Movies and Shows tabs), fetch the most popular items in that
-    genre/year window and queue the ones we don't have yet - this is what
-    auto-fills the library. Also queues recent work for any favorited actor.
+def run(total_limit: int | None = None, tv_limit: int | None = None) -> dict:
+    """Scheduled/manual job for Netflix-style per-genre auto-fill.
 
-    `total_limit` is the single shared daily budget of new titles (movies + series
-    combined), defaulting to AUTO_APPROVE_DAILY_LIMIT_MOVIE; `tv_limit` optionally
-    caps how many of those may be series (default AUTO_APPROVE_DAILY_LIMIT_TV; set
-    it >= total_limit for no practical series sub-limit). Genres are filled
-    round-robin so all of them are represented at once instead of the first couple
-    draining the budget. Already-requested movies and monitored series are skipped,
-    so nothing is requested twice and skips don't count against the budget."""
-    if total_limit is None:
-        total_limit = _settings.get("AUTO_APPROVE_DAILY_LIMIT_MOVIE", AUTO_APPROVE_DAILY_LIMIT_MOVIE)
-    if tv_limit is None:
-        tv_limit = _settings.get("AUTO_APPROVE_DAILY_LIMIT_TV", AUTO_APPROVE_DAILY_LIMIT_TV)
-    total_cap = total_limit if total_limit and total_limit > 0 else None
-    series_subcap = tv_limit if tv_limit and tv_limit > 0 else None
+    Each movie genre with auto_request_trending enabled gets its own movie
+    target. Each TV genre gets its own TV target. Existing requests, monitored
+    series, duplicate IMDb ids, blacklists, unreleased titles, no-IMDb mappings,
+    skipped items, and processor failures do not count toward those targets.
 
-    seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie"}
-    seen_series = {s["imdb_id"] for s in db.get_all_monitored_series()}
+    The legacy total_limit/tv_limit arguments and daily settings are intentionally
+    not used for genre filling anymore; they remain available for backwards
+    compatibility with favorite-actor queueing only.
+    """
+    legacy_movie_limit = total_limit
+    if legacy_movie_limit is None:
+        legacy_movie_limit = _settings.get("AUTO_APPROVE_DAILY_LIMIT_MOVIE", AUTO_APPROVE_DAILY_LIMIT_MOVIE)
+    legacy_tv_limit = tv_limit
+    if legacy_tv_limit is None:
+        legacy_tv_limit = _settings.get("AUTO_APPROVE_DAILY_LIMIT_TV", AUTO_APPROVE_DAILY_LIMIT_TV)
+
+    seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie" and r.get("imdb_id")}
+    seen_series = {s["imdb_id"] for s in db.get_all_monitored_series() if s.get("imdb_id")}
     movie_bl = db.get_content_blacklist_ids("movie")
     tv_bl = db.get_content_blacklist_ids("tv")
     person_bl = db.get_content_blacklist_ids("person")
 
-    movies_added, series_added = _fill_round_robin(
-        total_cap, series_subcap, seen_movies, seen_series, movie_bl, tv_bl, person_bl)
+    summary = _fill_per_genre(seen_movies, seen_series, movie_bl, tv_bl, person_bl)
 
-    total_remaining = None if total_cap is None else max(total_cap - movies_added - series_added, 0)
-    if total_remaining is None or total_remaining > 0:
-        tv_remaining = total_remaining if series_subcap is None else (
-            None if total_remaining is None else min(total_remaining, max(series_subcap - series_added, 0)))
-        actor_movies, actor_series = _run_favorite_actors(
-            seen_movies, seen_series, movie_bl, tv_bl, total_remaining, tv_remaining)
-        movies_added += actor_movies
-        series_added += actor_series
+    movie_actor_remaining = legacy_movie_limit if legacy_movie_limit and legacy_movie_limit > 0 else None
+    tv_actor_remaining = legacy_tv_limit if legacy_tv_limit and legacy_tv_limit > 0 else None
+    actor_movies, actor_series = _run_favorite_actors(
+        seen_movies, seen_series, movie_bl, tv_bl, movie_actor_remaining, tv_actor_remaining)
+    summary["favorite_actor_movies_queued"] = actor_movies
+    summary["favorite_actor_series_queued"] = actor_series
+    summary["movies_queued"] += actor_movies
+    summary["series_queued"] += actor_series
+    summary["total_queued"] = summary["movies_queued"] + summary["series_queued"]
 
-    total = movies_added + series_added
-    log.info("Auto-approve run complete: %d movie(s) + %d series = %d queued (total cap=%s)",
-             movies_added, series_added, total,
-             total_cap if total_cap is not None else "off")
-    return total
+    log.info("Auto-approve run complete: %d movie(s) + %d series = %d queued",
+             summary["movies_queued"], summary["series_queued"], summary["total_queued"])
+    return summary

@@ -147,7 +147,13 @@ export const api = {
       body: JSON.stringify({ media_type: type, rules }),
     }),
   autoApproveRunNow: () =>
-    http<{ status: string }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+    http<{
+      status: string;
+      movies_queued: number;
+      series_queued: number;
+      total_queued: number;
+      genres?: Record<string, unknown[]>;
+    }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
 
   // Content blacklist (movies / shows / actors)
   contentBlacklist: (kind?: BlacklistKind) =>
