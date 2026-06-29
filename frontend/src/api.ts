@@ -14,6 +14,7 @@ import type {
   LanguagePrefs,
   DiscoverPrefs,
   AutoApproveRules,
+  AutoApproveSettings,
   TmdbPerson,
   PersonDetail,
   Collection,

@@ -165,11 +165,13 @@ AUTO_ADD_MIN_VOTES = _env_int("AUTO_ADD_MIN_VOTES", 100)
 AUTO_ADD_REGION = _env("AUTO_ADD_REGION", "NL")
 
 # Per-genre auto-approve rules (configured in the Auto-Approve tab, stored in
-# settings). 0 disables the periodic auto-request-trending scan.
+# settings). Use AUTO_APPROVE_SCHEDULE_MODE=disabled to stop automatic runs.
 AUTO_APPROVE_CHECK_INTERVAL_HOURS = _env_int("AUTO_APPROVE_CHECK_INTERVAL_HOURS", 12)
-# Run the auto-approve scan once per day at this hour (local time) instead of on
-# a fixed interval, and cap how many new titles it queues per run so a single
-# day can't flood TorBox. Set the limit to 0 for no cap.
+# Runtime-editable scheduler settings. Legacy AUTO_APPROVE_CHECK_INTERVAL_HOURS
+# and AUTO_APPROVE_DAILY_HOUR remain for older deployments, but the scheduler
+# now reads these keys from the settings DB so no code/.env edit is needed.
+AUTO_APPROVE_SCHEDULE_MODE = _env("AUTO_APPROVE_SCHEDULE_MODE", "daily_time")
+AUTO_APPROVE_INTERVAL_HOURS = _env_int("AUTO_APPROVE_INTERVAL_HOURS", AUTO_APPROVE_CHECK_INTERVAL_HOURS)
 AUTO_APPROVE_DAILY_HOUR = _env_int("AUTO_APPROVE_DAILY_HOUR", 4)
 # Legacy daily caps retained for backwards compatibility and favorite-actor
 # queueing. Genre auto-fill uses the per-genre settings below instead.
