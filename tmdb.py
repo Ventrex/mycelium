@@ -608,25 +608,30 @@ NL_PROVIDERS = {
 }
 
 
-def get_notification_details(imdb_id: str, media_type: str = "movie",
-                             seasons: list[int] | None = None) -> dict | None:
+def get_notification_details(imdb_id: str | None, media_type: str = "movie",
+                             seasons: list[int] | None = None,
+                             tmdb_id: int | None = None) -> dict | None:
     """Return rich metadata for notifications, resolved from an IMDb ID.
 
     The result is intentionally presentation-ready so notification backends can
     stay small and consistent. Missing values are omitted rather than raising.
     """
     kind = "movie" if media_type == "movie" else "tv"
-    data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
-    if not data:
-        return None
-    key = "movie_results" if kind == "movie" else "tv_results"
-    results = data.get(key) or []
-    if not results:
-        return None
-    found = results[0]
-    tmdb_id = found.get("id")
+    found = {}
     if not tmdb_id:
-        return None
+        if not imdb_id:
+            return None
+        data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+        if not data:
+            return None
+        key = "movie_results" if kind == "movie" else "tv_results"
+        results = data.get(key) or []
+        if not results:
+            return None
+        found = results[0]
+        tmdb_id = found.get("id")
+        if not tmdb_id:
+            return None
 
     detail = _get(f"/{kind}/{tmdb_id}", params={"append_to_response": "credits"}) or {}
     title = detail.get("title") or detail.get("name") or found.get("title") or found.get("name") or imdb_id
@@ -670,7 +675,7 @@ def get_notification_details(imdb_id: str, media_type: str = "movie",
         season_summary = " · ".join(bits) if bits else None
 
     return {
-        "imdb_id": imdb_id,
+        "imdb_id": imdb_id or (detail.get("external_ids") or {}).get("imdb_id"),
         "tmdb_id": tmdb_id,
         "media_type": media_type,
         "title": title,

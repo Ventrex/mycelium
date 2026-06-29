@@ -8,12 +8,13 @@ log = logging.getLogger(__name__)
 
 
 def send(title: str, message: str, success: bool = True, *, imdb_id: str | None = None,
-         media_type: str | None = None, seasons: list[int] | None = None) -> None:
+         media_type: str | None = None, seasons: list[int] | None = None,
+         tmdb_id: int | None = None) -> None:
     if success and not settings.get("NOTIFY_ON_SUCCESS", True):
         return
     if not success and not settings.get("NOTIFY_ON_FAILURE", True):
         return
-    details = _media_details(imdb_id, media_type, seasons) if imdb_id else None
+    details = _media_details(imdb_id, media_type, seasons, tmdb_id) if imdb_id or tmdb_id else None
     if details:
         title = _notification_title(title, details)
         message = _notification_message(message, details)
@@ -26,22 +27,13 @@ def send(title: str, message: str, success: bool = True, *, imdb_id: str | None 
         _telegram(tg_token, tg_chat, title, message, success)
 
 
-def _discord_url_for(media_type: str | None) -> str:
-    default_url = (settings.get("DISCORD_WEBHOOK_URL", "") or "").strip()
-    normalized = (media_type or "").strip().lower()
-    if normalized == "movie":
-        return (settings.get("DISCORD_WEBHOOK_URL_MOVIES", "") or "").strip() or default_url
-    if normalized in ("series", "tv", "show", "shows"):
-        return (settings.get("DISCORD_WEBHOOK_URL_SHOWS", "") or "").strip() or default_url
-    return default_url
-
-
-def _media_details(imdb_id: str | None, media_type: str | None, seasons: list[int] | None) -> dict | None:
-    if not imdb_id:
+def _media_details(imdb_id: str | None, media_type: str | None,
+                   seasons: list[int] | None, tmdb_id: int | None = None) -> dict | None:
+    if not imdb_id and not tmdb_id:
         return None
     try:
         import tmdb
-        return tmdb.get_notification_details(imdb_id, media_type or "movie", seasons=seasons)
+        return tmdb.get_notification_details(imdb_id, media_type or "movie", seasons=seasons, tmdb_id=tmdb_id)
     except Exception as exc:
         log.debug("Media metadata lookup skipped for %s: %s", imdb_id, exc)
         return None
@@ -81,7 +73,7 @@ def _discord(url: str, title: str, message: str, success: bool, *, details: dict
         if details.get("url"):
             embed["url"] = details["url"]
         if details.get("poster_url"):
-            embed["thumbnail"] = {"url": details["poster_url"]}
+            embed["image"] = {"url": details["poster_url"]}
         fields = []
         if details.get("year"):
             fields.append({"name": "Jaartal", "value": str(details["year"]), "inline": True})
