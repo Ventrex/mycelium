@@ -156,20 +156,6 @@ export const api = {
       total_queued: number;
       genres?: Record<string, unknown[]>;
     }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
-  autoApproveSettingsGet: () =>
-    http<AutoApproveSettings>('/ui/api/auto-approve-settings'),
-  autoApproveSettingsSet: (settings: {
-    schedule_mode: AutoApproveSettings['schedule']['mode'];
-    interval_hours: number;
-    daily_time: string;
-    movie_per_genre_limit: number;
-    tv_per_genre_limit: number;
-    max_pages: number;
-  }) =>
-    http<AutoApproveSettings & { status: string }>('/ui/api/auto-approve-settings', {
-      method: 'POST',
-      body: JSON.stringify(settings),
-    }),
 
   // Content blacklist (movies / shows / actors)
   contentBlacklist: (kind?: BlacklistKind) =>
