@@ -242,6 +242,17 @@ CREATE TABLE IF NOT EXISTS watchlist (
     UNIQUE(user_id, imdb_id, media_type)
 );
 
+CREATE TABLE IF NOT EXISTS profiles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT    NOT NULL,
+    avatar      TEXT    NOT NULL DEFAULT '👤',
+    age_rating  TEXT    NOT NULL DEFAULT 'all',
+    kids_mode   INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+);
+
 CREATE TABLE IF NOT EXISTS user_requests (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -259,6 +270,7 @@ CREATE TABLE IF NOT EXISTS user_requests (
 
 CREATE INDEX IF NOT EXISTS idx_users_username             ON users(username);
 CREATE INDEX IF NOT EXISTS idx_watchlist_user             ON watchlist(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_user              ON profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_requests_user_status  ON user_requests(user_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_requests_status       ON user_requests(status, created_at DESC);
 
@@ -1521,6 +1533,89 @@ def user_count() -> int:
     with _connect() as conn:
         return conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
 
+
+
+# ── profiles ──────────────────────────────────────────────────────────────────
+
+_ALLOWED_AGE_RATINGS = {"all", "6", "9", "12", "16", "18"}
+
+
+def _normalize_profile(profile: dict) -> dict:
+    profile["kids_mode"] = bool(profile.get("kids_mode"))
+    return profile
+
+
+def list_profiles(user_id: int) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM profiles WHERE user_id=? ORDER BY id", (user_id,)
+        ).fetchall()
+        return [_normalize_profile(dict(r)) for r in rows]
+
+
+def get_profile(profile_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
+        return _normalize_profile(dict(row)) if row else None
+
+
+def create_profile(user_id: int, name: str, avatar: str = "👤",
+                   age_rating: str = "all", kids_mode: bool = False) -> int:
+    name = (name or "Profile").strip()[:40] or "Profile"
+    avatar = (avatar or "👤").strip()[:16] or "👤"
+    age_rating = str(age_rating or "all")
+    if age_rating not in _ALLOWED_AGE_RATINGS:
+        age_rating = "all"
+    with _connect() as conn:
+        cur = conn.execute(
+            """INSERT INTO profiles (user_id, name, avatar, age_rating, kids_mode)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, name, avatar, age_rating, 1 if kids_mode else 0),
+        )
+        return cur.lastrowid
+
+
+def update_profile(profile_id: int, *, name: str | None = None, avatar: str | None = None,
+                   age_rating: str | None = None, kids_mode: bool | None = None) -> None:
+    fields = {}
+    if name is not None:
+        fields["name"] = (name or "Profile").strip()[:40] or "Profile"
+    if avatar is not None:
+        fields["avatar"] = (avatar or "👤").strip()[:16] or "👤"
+    if age_rating is not None:
+        age_rating = str(age_rating or "all")
+        fields["age_rating"] = age_rating if age_rating in _ALLOWED_AGE_RATINGS else "all"
+    if kids_mode is not None:
+        fields["kids_mode"] = 1 if kids_mode else 0
+    if not fields:
+        return
+    fields["updated_at"] = "strftime('%Y-%m-%d %H:%M:%S','now')"
+    assignments = []
+    values = []
+    for key, value in fields.items():
+        if key == "updated_at":
+            assignments.append("updated_at=" + value)
+        else:
+            assignments.append(f"{key}=?")
+            values.append(value)
+    values.append(profile_id)
+    with _connect() as conn:
+        conn.execute("UPDATE profiles SET " + ", ".join(assignments) + " WHERE id=?", values)
+
+
+def delete_profile(profile_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
+
+
+def ensure_default_profile(user_id: int, username: str) -> dict:
+    profiles = list_profiles(user_id)
+    if profiles:
+        return profiles[0]
+    profile_id = create_profile(user_id, username or "Profile", "👤", "all", False)
+    profile = get_profile(profile_id)
+    assert profile is not None
+    return profile
 
 # ── watchlist ─────────────────────────────────────────────────────────────────
 
