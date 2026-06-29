@@ -133,21 +133,31 @@ function FavoriteActorsPanel() {
 
 function RunNowButton() {
   const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [summary, setSummary] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: api.autoApproveRunNow,
-    onMutate: () => setStatus('running'),
-    onSuccess: () => setStatus('done'),
+    onMutate: () => {
+      setStatus('running');
+      setSummary(null);
+    },
+    onSuccess: (data) => {
+      setStatus('done');
+      setSummary(`${data.movies_queued} movies, ${data.series_queued} shows queued (${data.total_queued} total)`);
+    },
     onError: () => setStatus('idle'),
   });
   return (
-    <button
-      type="button"
-      onClick={() => mutation.mutate()}
-      disabled={status === 'running'}
-      className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm disabled:opacity-60"
-    >
-      {status === 'running' ? 'Running...' : status === 'done' ? 'Started ✓' : '▶ Run now'}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => mutation.mutate()}
+        disabled={status === 'running'}
+        className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm disabled:opacity-60"
+      >
+        {status === 'running' ? 'Running...' : status === 'done' ? 'Done ✓' : '▶ Run now'}
+      </button>
+      {summary && <div className="text-xs text-muted">{summary}</div>}
+    </div>
   );
 }
 
