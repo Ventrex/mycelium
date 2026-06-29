@@ -90,6 +90,23 @@ export interface AutoApproveRule {
 
 export type AutoApproveRules = Record<string, AutoApproveRule>;
 
+export type AutoApproveScheduleMode = 'disabled' | 'hourly' | 'every_x_hours' | 'daily_time';
+
+export interface AutoApproveSettings {
+  schedule: {
+    mode: AutoApproveScheduleMode;
+    interval_hours: number;
+    daily_time: string;
+    daily_hour?: number;
+    daily_minute?: number;
+    description?: string;
+  };
+  description: string;
+  movie_per_genre_limit: number;
+  tv_per_genre_limit: number;
+  max_pages: number;
+}
+
 export interface TmdbPerson {
   tmdb_id: number;
   media_type: 'person';

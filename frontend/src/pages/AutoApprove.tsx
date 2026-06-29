@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, tmdbImg } from '../api';
-import type { AutoApproveRule, AutoApproveRules, FavoriteActor, Genre, MediaType, TmdbItem } from '../types';
+import type { AutoApproveRule, AutoApproveRules, AutoApproveSettings, FavoriteActor, Genre, MediaType, TmdbItem } from '../types';
 import PersonModal from '../components/PersonModal';
 import DetailModal from '../components/DetailModal';
 
@@ -27,6 +27,7 @@ export default function AutoApprove() {
         items. Turn on &quot;auto-fill trending&quot; to let Mycelium request popular titles in
         that genre on its own, Netflix-style.
       </p>
+      <AutoApproveSettingsCard />
       <div className="flex gap-2">
         {(['movie', 'tv'] as const).map((mt) => (
           <button
@@ -46,6 +47,143 @@ export default function AutoApprove() {
       <RuleTable mediaType={mediaType} />
       <FavoriteActorsPanel />
     </div>
+  );
+}
+
+
+function AutoApproveSettingsCard() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['auto-approve-settings'],
+    queryFn: api.autoApproveSettingsGet,
+  });
+  const [form, setForm] = useState({
+    schedule_mode: 'daily_time' as AutoApproveSettings['schedule']['mode'],
+    interval_hours: 12,
+    daily_time: '04:00',
+    movie_per_genre_limit: 50,
+    tv_per_genre_limit: 50,
+    max_pages: 10,
+  });
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setForm({
+      schedule_mode: data.schedule.mode,
+      interval_hours: data.schedule.interval_hours,
+      daily_time: data.schedule.daily_time,
+      movie_per_genre_limit: data.movie_per_genre_limit,
+      tv_per_genre_limit: data.tv_per_genre_limit,
+      max_pages: data.max_pages,
+    });
+  }, [data]);
+
+  const mutation = useMutation({
+    mutationFn: () => api.autoApproveSettingsSet(form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto-approve-settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const setNumber = (key: 'interval_hours' | 'movie_per_genre_limit' | 'tv_per_genre_limit' | 'max_pages', value: string) => {
+    setForm((prev) => ({ ...prev, [key]: Math.max(1, Number(value) || 1) }));
+  };
+
+  if (isLoading) {
+    return <div className="border border-border rounded-lg p-4 text-sm text-muted">Loading schedule...</div>;
+  }
+
+  return (
+    <section className="border border-border rounded-lg p-4 bg-card/40 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold">Schedule & limits</h2>
+          <p className="text-sm text-muted">Current schedule: {data?.description || 'Unknown'}</p>
+        </div>
+        {saved && <span className="text-xs text-green-400">Saved ✓</span>}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Schedule mode</span>
+          <select
+            value={form.schedule_mode}
+            onChange={(e) => setForm((prev) => ({ ...prev, schedule_mode: e.target.value as AutoApproveSettings['schedule']['mode'] }))}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          >
+            <option value="disabled">Disabled</option>
+            <option value="hourly">Every hour</option>
+            <option value="every_x_hours">Every X hours</option>
+            <option value="daily_time">Daily at HH:MM</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Interval hours</span>
+          <input
+            type="number"
+            min={1}
+            value={form.interval_hours}
+            onChange={(e) => setNumber('interval_hours', e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Daily time</span>
+          <input
+            type="time"
+            value={form.daily_time}
+            onChange={(e) => setForm((prev) => ({ ...prev, daily_time: e.target.value || '04:00' }))}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Movie per-genre limit</span>
+          <input
+            type="number"
+            min={1}
+            value={form.movie_per_genre_limit}
+            onChange={(e) => setNumber('movie_per_genre_limit', e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Show per-genre limit</span>
+          <input
+            type="number"
+            min={1}
+            value={form.tv_per_genre_limit}
+            onChange={(e) => setNumber('tv_per_genre_limit', e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-muted mb-1">Max TMDB pages</span>
+          <input
+            type="number"
+            min={1}
+            value={form.max_pages}
+            onChange={(e) => setNumber('max_pages', e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-2"
+          />
+        </label>
+      </div>
+
+      {mutation.isError && <div className="text-xs text-red-400">{(mutation.error as Error).message}</div>}
+      <button
+        type="button"
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending}
+        className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 font-semibold text-sm"
+      >
+        {mutation.isPending ? 'Saving...' : 'Save schedule & limits'}
+      </button>
+    </section>
   );
 }
 
@@ -133,21 +271,31 @@ function FavoriteActorsPanel() {
 
 function RunNowButton() {
   const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [summary, setSummary] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: api.autoApproveRunNow,
-    onMutate: () => setStatus('running'),
-    onSuccess: () => setStatus('done'),
+    onMutate: () => {
+      setStatus('running');
+      setSummary(null);
+    },
+    onSuccess: (data) => {
+      setStatus('done');
+      setSummary(`${data.movies_queued} movies, ${data.series_queued} shows queued (${data.total_queued} total)`);
+    },
     onError: () => setStatus('idle'),
   });
   return (
-    <button
-      type="button"
-      onClick={() => mutation.mutate()}
-      disabled={status === 'running'}
-      className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm disabled:opacity-60"
-    >
-      {status === 'running' ? 'Running...' : status === 'done' ? 'Started ✓' : '▶ Run now'}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => mutation.mutate()}
+        disabled={status === 'running'}
+        className="px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 text-sm disabled:opacity-60"
+      >
+        {status === 'running' ? 'Running...' : status === 'done' ? 'Done ✓' : '▶ Run now'}
+      </button>
+      {summary && <div className="text-xs text-muted">{summary}</div>}
+    </div>
   );
 }
 

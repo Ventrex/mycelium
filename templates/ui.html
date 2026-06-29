@@ -1309,7 +1309,7 @@
             }
           }
           body += `<tr style="border-bottom:1px solid var(--panel2)">
-            <td style="padding:8px 8px 8px 0;width:280px"><code style="font-size:11px">${it.key}</code> ${badges}</td>
+            <td style="padding:8px 8px 8px 0;width:280px"><div>${it.label || it.key} ${badges}</div><code style="font-size:11px">${it.key}</code></td>
             <td style="padding:8px 0">${input}</td>
           </tr>`;
         });
