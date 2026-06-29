@@ -593,6 +593,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
             imdb_id=req.imdb_id,
             media_type=req.media_type,
             seasons=req.seasons,
+            tmdb_id=getattr(req, "tmdb_id", None),
         )
         # Metrics
         elapsed = time.monotonic() - started
@@ -636,6 +637,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
             imdb_id=req.imdb_id,
             media_type=req.media_type,
             seasons=req.seasons,
+            tmdb_id=getattr(req, "tmdb_id", None),
         )
         db.record_metric("request_failed", req.media_type, value_int=1)
         try:
