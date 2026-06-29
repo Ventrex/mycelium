@@ -18,7 +18,7 @@ def send(title: str, message: str, success: bool = True, *, imdb_id: str | None 
     if details:
         title = _notification_title(title, details)
         message = _notification_message(message, details)
-    discord_url = settings.get("DISCORD_WEBHOOK_URL", "")
+    discord_url = _discord_url_for(media_type)
     tg_token = settings.get("TELEGRAM_BOT_TOKEN", "")
     tg_chat = settings.get("TELEGRAM_CHAT_ID", "")
     if discord_url:
