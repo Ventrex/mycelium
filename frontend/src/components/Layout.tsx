@@ -24,6 +24,7 @@ const adminItems = [
 export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { data: session } = useQuery({
     queryKey: ['session'],
     queryFn: api.session,

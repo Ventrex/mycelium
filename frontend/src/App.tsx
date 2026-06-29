@@ -13,11 +13,13 @@ import AutoApprove from './pages/AutoApprove';
 import Blacklist from './pages/Blacklist';
 import Subtitles from './pages/Subtitles';
 import Login from './pages/Login';
+import ProfileSelect from './pages/ProfileSelect';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/profiles" element={<ProfileSelect />} />
       <Route element={<Layout />}>
         <Route index element={<Discover />} />
         <Route path="library" element={<Library />} />

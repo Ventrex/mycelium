@@ -195,9 +195,23 @@ export interface UserRequest {
   created_at: string;
 }
 
+
+export interface Profile {
+  id: number;
+  user_id: number;
+  name: string;
+  avatar: string;
+  age_rating: 'all' | '6' | '9' | '12' | '16' | '18';
+  kids_mode: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SessionInfo {
   authenticated: boolean;
   jellyfin_url?: string | null;
+  profiles_required?: boolean;
+  selected_profile?: Profile | null;
   user?: {
     id: number;
     username: string;
