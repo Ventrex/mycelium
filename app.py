@@ -64,7 +64,7 @@ from config import (
     WEBHOOK_SECRET,
     configure_logging,
 )
-from webhook_parser import IgnoreEvent, MediaRequest, WebhookError, parse
+from webhook_parser import IgnoreEvent, MediaRequest, WebhookError, parse, resolve_display_title
 
 configure_logging()
 log_buffer.install()
@@ -908,12 +908,13 @@ def ui_submit():
     if media_type == "series" and not seasons:
         seasons = [1]
 
+    display_title = resolve_display_title(imdb_id, media_type) or imdb_id
     media_request = MediaRequest(
-        title=imdb_id, media_type=media_type, imdb_id=imdb_id, seasons=seasons,
+        title=display_title, media_type=media_type, imdb_id=imdb_id, seasons=seasons,
     )
     threading.Thread(target=processor.process, args=(media_request,),
                      name=f"manual-{imdb_id}", daemon=True).start()
-    flash(f"Queued: {imdb_id} ({media_type})", "ok")
+    flash(f"Queued: {display_title} ({media_type})", "ok")
     return redirect(url_for("ui_dashboard"))
 
 
@@ -935,13 +936,14 @@ def ui_search_episode():
 @app.post("/ui/download-movie")
 def ui_download_movie():
     imdb_id = request.form.get("imdb_id", "")
+    display_title = resolve_display_title(imdb_id, "movie") or imdb_id
     media_request = MediaRequest(
-        title=imdb_id, media_type="movie", imdb_id=imdb_id, seasons=[],
+        title=display_title, media_type="movie", imdb_id=imdb_id, seasons=[],
     )
     db.update_media_item_status(imdb_id, "movie", "processing")
     threading.Thread(target=processor.process, args=(media_request,),
                      name=f"movie-{imdb_id}", daemon=True).start()
-    flash(f"Download queued for {imdb_id}", "ok")
+    flash(f"Download queued for {display_title}", "ok")
     return redirect(url_for("ui_dashboard") + "#movies")
 
 
@@ -2767,8 +2769,111 @@ def ui_api_session():
         "library_click_jellyfin": bool(rec.get("library_click_jellyfin")),
     }
     user.update(plugin_loader.session_fields(rec))
+    selected_profile = None
+    profiles_required = False
+    if rec.get("id"):
+        from flask import session as _session
+        db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+        profiles = db.list_profiles(rec["id"])
+        profiles_required = bool(profiles)
+        selected_id = _session.get("profile_id")
+        if selected_id:
+            profile = db.get_profile(int(selected_id))
+            if profile and profile.get("user_id") == rec.get("id"):
+                selected_profile = profile
+            else:
+                _session.pop("profile_id", None)
     jellyfin_url = (_settings.get("JELLYFIN_URL") or cfg.JELLYFIN_URL or "").rstrip("/")
-    return jsonify(authenticated=True, user=user, jellyfin_url=jellyfin_url or None)
+    return jsonify(
+        authenticated=True,
+        user=user,
+        selected_profile=selected_profile,
+        profiles_required=profiles_required and selected_profile is None,
+        jellyfin_url=jellyfin_url or None,
+    )
+
+
+@app.get("/ui/api/profiles")
+def ui_api_profiles_get():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(profiles=[], selected_profile=None)
+    from flask import session as _session
+    db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+    profiles = db.list_profiles(rec["id"])
+    selected_profile = None
+    selected_id = _session.get("profile_id")
+    if selected_id:
+        selected_profile = db.get_profile(int(selected_id))
+        if not selected_profile or selected_profile.get("user_id") != rec.get("id"):
+            selected_profile = None
+            _session.pop("profile_id", None)
+    return jsonify(profiles=profiles, selected_profile=selected_profile)
+
+
+@app.post("/ui/api/profiles")
+def ui_api_profiles_create():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    payload = request.get_json(silent=True) or {}
+    profile_id = db.create_profile(
+        rec["id"],
+        payload.get("name") or "Profile",
+        payload.get("avatar") or "👤",
+        payload.get("age_rating") or "all",
+        bool(payload.get("kids_mode")),
+    )
+    return jsonify(profile=db.get_profile(profile_id))
+
+
+@app.post("/ui/api/profiles/select")
+def ui_api_profiles_select():
+    rec = auth.current_user_record()
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    payload = request.get_json(silent=True) or {}
+    profile = db.get_profile(int(payload.get("id") or 0))
+    if not profile or profile.get("user_id") != rec.get("id"):
+        return jsonify(error="profile not found"), 404
+    from flask import session as _session
+    _session["profile_id"] = profile["id"]
+    return jsonify(status="selected", selected_profile=profile)
+
+
+@app.post("/ui/api/profiles/<int:profile_id>/update")
+def ui_api_profiles_update(profile_id: int):
+    rec = auth.current_user_record()
+    profile = db.get_profile(profile_id)
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    if not profile or (profile.get("user_id") != rec.get("id") and rec.get("role") != "admin"):
+        return jsonify(error="profile not found"), 404
+    payload = request.get_json(silent=True) or {}
+    db.update_profile(
+        profile_id,
+        name=payload.get("name"),
+        avatar=payload.get("avatar"),
+        age_rating=payload.get("age_rating"),
+        kids_mode=payload.get("kids_mode") if "kids_mode" in payload else None,
+    )
+    return jsonify(profile=db.get_profile(profile_id))
+
+
+@app.post("/ui/api/profiles/<int:profile_id>/delete")
+def ui_api_profiles_delete(profile_id: int):
+    rec = auth.current_user_record()
+    profile = db.get_profile(profile_id)
+    if not rec or not rec.get("id"):
+        return jsonify(error="not authenticated"), 401
+    if not profile or (profile.get("user_id") != rec.get("id") and rec.get("role") != "admin"):
+        return jsonify(error="profile not found"), 404
+    db.delete_profile(profile_id)
+    from flask import session as _session
+    if _session.get("profile_id") == profile_id:
+        _session.pop("profile_id", None)
+    db.ensure_default_profile(rec["id"], rec.get("username") or "Profile")
+    return jsonify(status="deleted")
 
 
 @app.get("/ui/api/plugins")

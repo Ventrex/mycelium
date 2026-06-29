@@ -59,3 +59,17 @@ def test_series_defaults_to_season_1():
     }
     req = parse(payload)
     assert req.seasons == [1]
+
+
+def test_parse_resolves_raw_imdb_subject_to_display_title(monkeypatch):
+    monkeypatch.setattr("webhook_parser.tmdb.get_notification_details", lambda *args, **kwargs: {
+        "title": "Dune: Part Two",
+        "year": "2024",
+    })
+    payload = {
+        "notification_type": "MEDIA_AUTO_APPROVED",
+        "subject": "tt15239678",
+        "media": {"media_type": "movie", "imdbId": "tt15239678"},
+    }
+    req = parse(payload)
+    assert req.title == "Dune: Part Two (2024)"
