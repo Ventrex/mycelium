@@ -98,6 +98,8 @@ LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK_URL = _env("DISCORD_WEBHOOK_URL", "")
+DISCORD_WEBHOOK_URL_MOVIES = _env("DISCORD_WEBHOOK_URL_MOVIES", "")
+DISCORD_WEBHOOK_URL_SHOWS = _env("DISCORD_WEBHOOK_URL_SHOWS", "")
 TELEGRAM_BOT_TOKEN = _env("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = _env("TELEGRAM_CHAT_ID", "")
 NOTIFY_ON_SUCCESS = _env("NOTIFY_ON_SUCCESS", "true").lower() in ("1", "true", "yes")

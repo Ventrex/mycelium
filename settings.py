@@ -133,6 +133,8 @@ HOT_RELOAD = {
     "NOTIFY_ON_SUCCESS",
     "NOTIFY_ON_FAILURE",
     "DISCORD_WEBHOOK_URL",
+    "DISCORD_WEBHOOK_URL_MOVIES",
+    "DISCORD_WEBHOOK_URL_SHOWS",
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID",
     "AUTO_UPGRADE_ENABLED",
@@ -261,7 +263,8 @@ SETTING_GROUPS = [
         "category": "security",
         "keys": [
             "NOTIFY_ON_SUCCESS", "NOTIFY_ON_FAILURE",
-            "DISCORD_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+            "DISCORD_WEBHOOK_URL", "DISCORD_WEBHOOK_URL_MOVIES",
+            "DISCORD_WEBHOOK_URL_SHOWS", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
         ],
     },
     {
@@ -278,6 +281,12 @@ SETTING_GROUPS = [
 ]
 
 # Display labels + order for the Settings sub-tabs, keyed by group "category".
+SETTING_LABELS = {
+    "DISCORD_WEBHOOK_URL": "Default Discord webhook",
+    "DISCORD_WEBHOOK_URL_MOVIES": "Movies Discord webhook",
+    "DISCORD_WEBHOOK_URL_SHOWS": "Shows Discord webhook",
+}
+
 SETTING_CATEGORIES = [
     {"id": "general", "title": "General"},
     {"id": "quality", "title": "Quality & Subtitles"},
@@ -363,6 +372,7 @@ def all_for_ui() -> list[dict]:
             )
             items.append({
                 "key": key,
+                "label": SETTING_LABELS.get(key, key),
                 "value": current,
                 "kind": kind,
                 "overridden": override_raw is not None,
