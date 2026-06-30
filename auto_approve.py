@@ -36,6 +36,7 @@ from config import (
     AUTO_REQUEST_TRENDING_TV_LIMIT,
     FAVORITE_ACTOR_PER_ACTOR_LIMIT,
     FAVORITE_ACTOR_RECENCY_YEARS,
+    AUTO_APPROVE_FILL_COLLECTIONS,
 )
 from webhook_parser import MediaRequest
 
@@ -114,7 +115,39 @@ def _passes_filters(item: dict, min_votes: int | None = None) -> bool:
     return True
 
 
-def _queue_movie(item: dict, seen: set[str]) -> bool:
+def _fill_collection(tmdb_id: int, seen: set[str], media_bl: set[int] | None = None) -> int:
+    """Queue the rest of a movie's collection (e.g. all Toy Story films) so
+    franchises arrive complete. No-op when the movie isn't part of a collection
+    or the feature is disabled. Returns the number of sibling films queued."""
+    if not _settings.get("AUTO_APPROVE_FILL_COLLECTIONS", AUTO_APPROVE_FILL_COLLECTIONS):
+        return 0
+    try:
+        coll_id = tmdb.movie_collection_id(tmdb_id)
+        if not coll_id:
+            return 0
+        detail = tmdb.collection_details(coll_id)
+    except Exception as exc:
+        log.debug("Collection lookup failed for %s: %s", tmdb_id, exc)
+        return 0
+    if not detail:
+        return 0
+    if media_bl is None:
+        media_bl = db.get_content_blacklist_ids("movie")
+    added = 0
+    for part in detail.get("parts") or []:
+        ptid = part.get("tmdb_id")
+        if not ptid or ptid == tmdb_id or ptid in media_bl:
+            continue
+        # fill_collection=False prevents recursion back into the same collection.
+        if _queue_movie(part, seen, media_bl=media_bl, fill_collection=False):
+            added += 1
+    if added:
+        log.info("Auto-approve: filled %d more film(s) from collection '%s'", added, detail.get("name"))
+    return added
+
+
+def _queue_movie(item: dict, seen: set[str], media_bl: set[int] | None = None,
+                 fill_collection: bool = True) -> bool:
     tmdb_id, title = item.get("tmdb_id"), item.get("title") or ""
     if not tmdb_id or not title:
         return False
@@ -124,11 +157,14 @@ def _queue_movie(item: dict, seen: set[str]) -> bool:
     log.info("Auto-approve: queueing movie %s (%s)", title, imdb_id)
     seen.add(imdb_id)
     try:
-        return processor.process(MediaRequest(title=title, media_type="movie", imdb_id=imdb_id,
-                                                seasons=[], tmdb_id=tmdb_id))
+        ok = processor.process(MediaRequest(title=title, media_type="movie", imdb_id=imdb_id,
+                                              seasons=[], tmdb_id=tmdb_id))
     except Exception as exc:
         log.warning("Auto-approve: processor failed for %s: %s", title, exc)
-        return False
+        ok = False
+    if fill_collection:
+        _fill_collection(tmdb_id, seen, media_bl)
+    return ok
 
 
 def _queue_series(item: dict, seen: set[str]) -> bool:
@@ -249,7 +285,10 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
             media_bl = movie_bl if media_type == "movie" else tv_bl
             if item.get("tmdb_id") in media_bl or not _is_recent_or_upcoming(item):
                 continue
-            if _is_unreleased(item) or _is_non_scripted_or_guest(item):
+            # Allow upcoming titles through: an upcoming movie becomes an
+            # 'upcoming' request that is rechecked once it releases, and an
+            # upcoming series is monitored so the monitor grabs it when it airs.
+            if _is_non_scripted_or_guest(item):
                 continue
             queue_fn = _queue_movie if media_type == "movie" else _queue_series
             seen = seen_movies if media_type == "movie" else seen_series

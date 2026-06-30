@@ -595,6 +595,13 @@ def collection_details(collection_id: int) -> dict | None:
     }
 
 
+def movie_collection_id(tmdb_id: int) -> int | None:
+    """The TMDB collection id a movie belongs to (e.g. Toy Story), or None."""
+    data = _get(f"/movie/{tmdb_id}")
+    coll = (data or {}).get("belongs_to_collection")
+    return coll.get("id") if isinstance(coll, dict) and coll.get("id") else None
+
+
 # Common Dutch / European providers  -  IDs from TMDB
 NL_PROVIDERS = {
     "netflix": 8,

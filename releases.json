@@ -4,6 +4,8 @@
     "date": "2026-06-30",
     "notes": [
       "Favorite actors now auto-request their whole filmography by default (no 3-title/1-year cap), excluding soaps/talk/news/reality guest spots but keeping real scripted guest roles",
+      "Favorite actors also pull upcoming films (as 'upcoming' requests) and monitor future series",
+      "Auto-approve fills the rest of a movie collection when one film is requested (e.g. Toy Story 4 pulls the whole series)",
       "Fix: multi-season series only showed season 1 in the library - every season's torrent now gets .strm files (fixed/non-catbox mode)",
       "Trakt watchlist can now auto-request (download) synced items, throttled per sync run so it does not flood TorBox (opt-in via TRAKT_AUTO_REQUEST)",
       "Daily trending auto-request: top trending movies and shows requested once a day, capped per type (opt-in via AUTO_REQUEST_TRENDING)",
