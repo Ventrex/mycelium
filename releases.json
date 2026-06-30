@@ -12,6 +12,8 @@
       "Topbar search is now a real search bar instead of an icon button",
       "New admin-only Logs page in the React UI with Server / Auto-Approve / Subtitles tabs, newest-first and auto-refresh",
       "Netflix-style profile selection after login: multiple profiles per account with avatar/age-rating, auto-created default, shown top-right with a Switch profile option",
+      "Profile age rating / kids mode now hides horror and other mature genres from Discover and Search (safe genre-based filtering)",
+      "Cleaner profile picker: add/edit moved behind a Manage profiles button and a dialog",
       "Fix: notifications crashed with NameError (_discord_url_for) and sent nothing"
     ]
   },

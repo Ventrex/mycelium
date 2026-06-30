@@ -1880,10 +1880,59 @@ def ui_api_discover_search():
     return jsonify(results=results)
 
 
+# TMDB genre ids that are unsuitable below a certain age. Genre-based filtering
+# is safe: TMDB discover/trending results always carry genre_ids (or an empty
+# list), so we never depend on certification data that may be missing.
+_GENRE_HORROR = 27
+_GENRE_THRILLER = 53
+_GENRE_CRIME = 80
+_GENRE_WAR = 10752
+_GENRE_WAR_POLITICS = 10768  # TV equivalent of War
+
+
+def _active_profile() -> dict | None:
+    """The profile currently selected in this session, or None."""
+    try:
+        from flask import session as _session
+        pid = _session.get("profile_id")
+        if not pid:
+            return None
+        rec = auth.current_user_record()
+        if not rec or not rec.get("id"):
+            return None
+        prof = db.get_profile(int(pid))
+        if prof and prof.get("user_id") == rec.get("id"):
+            return prof
+    except Exception:
+        return None
+    return None
+
+
+def _excluded_genres_for_profile(profile: dict | None) -> set[int]:
+    """Genre ids to hide for a profile's age rating / kids mode.
+
+    Higher ages (and 'all') see everything; younger profiles and kids mode
+    progressively exclude horror, thrillers, war and crime.
+    """
+    if not profile:
+        return set()
+    if profile.get("kids_mode"):
+        return {_GENRE_HORROR, _GENRE_THRILLER, _GENRE_CRIME, _GENRE_WAR, _GENRE_WAR_POLITICS}
+    age = str(profile.get("age_rating") or "all")
+    if age == "12":
+        return {_GENRE_HORROR}
+    if age == "9":
+        return {_GENRE_HORROR, _GENRE_THRILLER}
+    if age == "6":
+        return {_GENRE_HORROR, _GENRE_THRILLER, _GENRE_CRIME, _GENRE_WAR, _GENRE_WAR_POLITICS}
+    return set()  # 'all', '16', '18'
+
+
 def _filter_discover_results(items: list[dict]) -> list[dict]:
-    """Drop movies/shows/people the user has blacklisted, and items whose
-    original_language doesn't match the allowed/excluded language prefs, so
-    they stop showing up in discover, search and recommendations."""
+    """Drop movies/shows/people the user has blacklisted, items whose
+    original_language doesn't match the allowed/excluded language prefs, and
+    age-inappropriate genres for the active profile, so they stop showing up in
+    discover, search and recommendations."""
     bl = {
         "movie": db.get_content_blacklist_ids("movie"),
         "tv": db.get_content_blacklist_ids("tv"),
@@ -1891,6 +1940,9 @@ def _filter_discover_results(items: list[dict]) -> list[dict]:
     }
     if any(bl.values()):
         items = [it for it in items if it.get("tmdb_id") not in bl.get(it.get("media_type"), set())]
+    excluded = _excluded_genres_for_profile(_active_profile())
+    if excluded:
+        items = [it for it in items if not (set(it.get("genre_ids") or []) & excluded)]
     return language_prefs.filter_items(items)
 
 
