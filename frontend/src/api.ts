@@ -15,6 +15,7 @@ import type {
   DiscoverPrefs,
   AutoApproveRules,
   AutoApproveSettings,
+  AutoApproveSettingsInput,
   TmdbPerson,
   PersonDetail,
   Collection,
@@ -156,6 +157,15 @@ export const api = {
       total_queued: number;
       genres?: Record<string, unknown[]>;
     }>('/ui/api/auto-approve-rules/run-now', { method: 'POST' }),
+
+  // Auto-approve scheduling + per-genre limits (Auto-Approve settings card)
+  autoApproveSettingsGet: () =>
+    http<AutoApproveSettings>('/ui/api/auto-approve-settings'),
+  autoApproveSettingsSet: (settings: AutoApproveSettingsInput) =>
+    http<AutoApproveSettings & { status: string }>('/ui/api/auto-approve-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
 
   // Content blacklist (movies / shows / actors)
   contentBlacklist: (kind?: BlacklistKind) =>
