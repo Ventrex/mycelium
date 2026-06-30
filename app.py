@@ -2278,6 +2278,40 @@ def ui_api_auto_approve_run_now():
     return jsonify(status="complete", **summary)
 
 
+@app.get("/ui/api/notification-settings")
+def ui_api_notification_settings_get():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    return jsonify(
+        discord_webhook_url=_settings_mod.get("DISCORD_WEBHOOK_URL", "") or "",
+        discord_webhook_url_movies=_settings_mod.get("DISCORD_WEBHOOK_URL_MOVIES", "") or "",
+        discord_webhook_url_shows=_settings_mod.get("DISCORD_WEBHOOK_URL_SHOWS", "") or "",
+        notify_on_success=bool(_settings_mod.get("NOTIFY_ON_SUCCESS", True)),
+        notify_on_failure=bool(_settings_mod.get("NOTIFY_ON_FAILURE", True)),
+    )
+
+
+@app.post("/ui/api/notification-settings")
+def ui_api_notification_settings_set():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    payload = request.get_json(silent=True) or {}
+    for field, key in (
+        ("discord_webhook_url", "DISCORD_WEBHOOK_URL"),
+        ("discord_webhook_url_movies", "DISCORD_WEBHOOK_URL_MOVIES"),
+        ("discord_webhook_url_shows", "DISCORD_WEBHOOK_URL_SHOWS"),
+    ):
+        if field in payload:
+            _settings_mod.set(key, (str(payload.get(field) or "")).strip() or None)
+    for field, key in (
+        ("notify_on_success", "NOTIFY_ON_SUCCESS"),
+        ("notify_on_failure", "NOTIFY_ON_FAILURE"),
+    ):
+        if field in payload:
+            _settings_mod.set(key, bool(payload.get(field)))
+    return jsonify(status="saved")
+
+
 @app.get("/ui/api/content-blacklist")
 def ui_api_content_blacklist_get():
     kind = request.args.get("kind")

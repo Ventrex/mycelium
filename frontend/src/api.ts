@@ -16,6 +16,7 @@ import type {
   AutoApproveRules,
   AutoApproveSettings,
   AutoApproveSettingsInput,
+  NotificationSettings,
   TmdbPerson,
   PersonDetail,
   Collection,
@@ -163,6 +164,15 @@ export const api = {
     http<AutoApproveSettings>('/ui/api/auto-approve-settings'),
   autoApproveSettingsSet: (settings: AutoApproveSettingsInput) =>
     http<AutoApproveSettings & { status: string }>('/ui/api/auto-approve-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
+
+  // Notification settings (Discord webhooks, admin-only)
+  notificationSettingsGet: () =>
+    http<NotificationSettings>('/ui/api/notification-settings'),
+  notificationSettingsSet: (settings: NotificationSettings) =>
+    http<{ status: string }>('/ui/api/notification-settings', {
       method: 'POST',
       body: JSON.stringify(settings),
     }),
