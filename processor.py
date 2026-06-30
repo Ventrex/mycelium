@@ -525,15 +525,20 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
 
     success = False
     winner: Optional[TorrentioStream] = None
+    season_winners: list[TorrentioStream] = []
     try:
         if req.is_movie:
             success, winner = _process_movie(req)
+            if winner:
+                season_winners.append(winner)
         else:
             for season in req.seasons:
                 ok, w = _process_season(req, season)
                 if ok:
                     success = True
-                    winner = winner or w
+                    if w:
+                        season_winners.append(w)
+            winner = season_winners[0] if season_winners else None
     except RateLimited:
         # TorBox 429  -  not a real failure. Reschedule and surface a clear status.
         _LAST_FAIL_REASON.pop(req.imdb_id, None)
@@ -564,20 +569,25 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
         )
         if not req.is_movie:
             monitor.add_series(req.imdb_id, req.title, req.seasons)
-        item = torbox.find_by_hash(winner.info_hash) if winner else None
-        torrent_id = item.get('id') if item else None
-        if torrent_id:
+        # Generate .strm for every winning torrent. For a multi-season series each
+        # season is its own pack, so all winners must be materialised  -  not just
+        # the first  -  otherwise only season 1 ends up in the library. (In catbox/
+        # lazy mode the winners aren't in TorBox and the per-season .strm files were
+        # already written during registration, so this loop no-ops.)
+        for w in season_winners:
+            item = torbox.find_by_hash(w.info_hash) if w else None
+            torrent_id = item.get('id') if item else None
+            if not torrent_id:
+                continue
             strm_generator.create_strm_for_torrent(torrent_id, req.title, req.media_type,
                                                     imdb_id=req.imdb_id,
                                                     tmdb_id=getattr(req, 'tmdb_id', None))
-        # RD fallback already wrote its .strm before returning; nothing to do here.
-            # Best-effort subtitle fetch
+            # Best-effort subtitle fetch (movies only)
             try:
                 import subtitles
                 from pathlib import Path
                 from config import MEDIA_PATH
                 if req.is_movie:
-                    # Find newest .strm in movies for this title (rough match)
                     media = Path(MEDIA_PATH) / "movies"
                     for p in sorted(media.rglob("*.strm"), key=lambda p: p.stat().st_mtime, reverse=True)[:3]:
                         subtitles.fetch_for(p, req.imdb_id, "movie", title=req.title)
