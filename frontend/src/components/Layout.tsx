@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
@@ -104,7 +104,7 @@ export default function Layout() {
             </button>
             <Breadcrumb path={location.pathname} />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <TopbarIconLink to="/search" label="Search" icon="🔍" />
+              <TopbarSearch />
               <TopbarIconLink to="/manual" label="Manual" icon="📖" />
               {session?.user && <RegionPicker region={session.user.region || 'NL'} />}
               <ProfileMenu username={session?.user?.username} />
@@ -169,6 +169,34 @@ function SidebarSection({
   );
 }
 
+
+function TopbarSearch() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const term = q.trim();
+    navigate(term ? `/search?q=${encodeURIComponent(term)}` : '/search');
+  };
+
+  return (
+    <form onSubmit={submit} className="relative" role="search">
+      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted" aria-hidden="true">
+        🔍
+      </span>
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search…"
+        aria-label="Search"
+        className="w-28 sm:w-44 md:w-56 rounded-lg border border-border bg-card pl-8 pr-2.5 py-1.5 text-sm
+                   text-white placeholder-muted/60 focus:outline-none focus:border-accent/50 transition-[width]"
+      />
+    </form>
+  );
+}
 
 function TopbarIconLink({ to, label, icon }: { to: string; label: string; icon: string }) {
   return (

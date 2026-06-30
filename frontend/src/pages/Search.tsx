@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { MediaType, TmdbItem } from '../types';
@@ -11,7 +12,13 @@ import LanguageSettingsModal from '../components/LanguageSettingsModal';
 type TypeFilter = 'all' | MediaType | 'person';
 
 export default function Search() {
-  const [q, setQ] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlQ = searchParams.get('q') || '';
+  const [q, setQ] = useState(urlQ);
+  // Seed/refresh from the topbar search bar (?q=...) when it changes.
+  useEffect(() => {
+    setQ(urlQ);
+  }, [urlQ]);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);

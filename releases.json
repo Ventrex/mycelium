@@ -9,6 +9,7 @@
       "Auto-Approve: scheduling (Disabled / Every hour / Every X hours / Daily at HH:MM) and per-genre limits are now editable from the Auto-Approve tab",
       "Discord notifications can be split into separate movies and shows webhooks, each falling back to the default webhook",
       "Notifications (Discord webhooks + notify toggles) are now configurable from the React Settings page, not only the /admin dashboard",
+      "Topbar search is now a real search bar instead of an icon button",
       "Fix: notifications crashed with NameError (_discord_url_for) and sent nothing"
     ]
   },
