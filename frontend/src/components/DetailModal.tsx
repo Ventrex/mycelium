@@ -39,6 +39,13 @@ export default function DetailModal({
     enabled: open,
   });
 
+  const { data: byCreator } = useQuery({
+    queryKey: ['by-creator', mediaType, tmdbId],
+    queryFn: () => api.byCreator(mediaType!, tmdbId!).then((r) => r.results),
+    enabled: open && !!tmdbId,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: watchlist } = useQuery({
     queryKey: ['watchlist'],
     queryFn: api.watchlist,
@@ -603,6 +610,52 @@ export default function DetailModal({
                     </Tag>
                   );
                 })}
+              </div>
+            </Section>
+          )}
+
+          {detail?.crew && detail.crew.length > 0 && (
+            <Section title="Crew">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {detail.crew.map((c, i) => (
+                  <button
+                    key={`${c.id}-${c.job}-${i}`}
+                    type="button"
+                    disabled={!c.id}
+                    onClick={() => c.id && setCastPersonId(c.id)}
+                    className={`text-sm ${c.id ? 'hover:text-accent' : ''}`}
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-muted text-xs"> · {c.job}</span>
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {byCreator && byCreator.length > 0 && (
+            <Section title="From the same creators">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                {byCreator.slice(0, 12).map((r) => (
+                  <button
+                    key={`creator-${r.media_type}-${r.tmdb_id}`}
+                    type="button"
+                    onClick={() => onSelectItem(r)}
+                    title={(r as any).via ? `via ${(r as any).via}` : undefined}
+                    className="aspect-[2/3] rounded-md overflow-hidden bg-bg border border-border
+                                hover:border-accent/50 transition"
+                  >
+                    {r.poster_path ? (
+                      <img
+                        src={tmdbImg.poster(r.poster_path) || undefined}
+                        alt={r.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-xs text-muted p-2 text-center">{r.title}</div>
+                    )}
+                  </button>
+                ))}
               </div>
             </Section>
           )}

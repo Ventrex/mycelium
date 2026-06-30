@@ -371,6 +371,7 @@ def details(media_type: str, tmdb_id: int, region: str = "NL") -> dict | None:
     cast = ((data.get("credits") or {}).get("cast") or [])[:12]
     item["cast"] = [{"id": c.get("id"), "name": c.get("name"), "character": c.get("character"),
                      "profile_path": c.get("profile_path")} for c in cast]
+    item["crew"] = _key_creators(data)[:8]
     videos = ((data.get("videos") or {}).get("results") or [])
     item["trailers"] = [{"key": v.get("key"), "name": v.get("name"), "site": v.get("site")}
                          for v in videos if v.get("type") == "Trailer" and v.get("site") == "YouTube"][:3]
@@ -600,6 +601,66 @@ def movie_collection_id(tmdb_id: int) -> int | None:
     data = _get(f"/movie/{tmdb_id}")
     coll = (data or {}).get("belongs_to_collection")
     return coll.get("id") if isinstance(coll, dict) and coll.get("id") else None
+
+
+# Crew jobs that define an author of a title (so "from the same creators" means
+# the same writer/showrunner/director, not the camera operator).
+_CREATOR_JOBS = ("Creator", "Writer", "Screenplay", "Story", "Director", "Executive Producer")
+_CREATOR_JOB_ORDER = {j: i for i, j in enumerate(_CREATOR_JOBS)}
+
+
+def _key_creators(data: dict) -> list[dict]:
+    """Extract a title's authoring crew (TV created_by + key crew jobs),
+    de-duplicated and ordered Creator > Writer > Director."""
+    people: list[dict] = []
+    seen: set = set()
+    for cb in (data.get("created_by") or []):
+        pid = cb.get("id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            people.append({"id": pid, "name": cb.get("name"), "job": "Creator",
+                           "profile_path": cb.get("profile_path")})
+    crew = [c for c in ((data.get("credits") or {}).get("crew") or [])
+            if c.get("id") and c.get("job") in _CREATOR_JOBS]
+    crew.sort(key=lambda c: _CREATOR_JOB_ORDER.get(c.get("job"), 99))
+    for c in crew:
+        pid = c.get("id")
+        if pid not in seen:
+            seen.add(pid)
+            people.append({"id": pid, "name": c.get("name"), "job": c.get("job"),
+                           "profile_path": c.get("profile_path")})
+    return people
+
+
+def by_creators(media_type: str, tmdb_id: int, limit: int = 18) -> list[dict]:
+    """Other titles by the same writer/showrunner/director, of the same media
+    type and with at least one overlapping genre (e.g. My Name is Earl ->
+    Raising Hope via Greg Garcia). Sorted by popularity."""
+    kind = "movie" if media_type == "movie" else "tv"
+    base = _get(f"/{kind}/{tmdb_id}", params={"append_to_response": "credits"})
+    if not base:
+        return []
+    base_genres = {g.get("id") for g in (base.get("genres") or [])}
+    out: list[dict] = []
+    seen_ids = {int(tmdb_id)}
+    for person in _key_creators(base)[:3]:
+        data = _get(f"/person/{person['id']}/combined_credits")
+        if not data:
+            continue
+        for c in (data.get("crew") or []):
+            if c.get("media_type") != media_type or c.get("job") not in _CREATOR_JOBS:
+                continue
+            cid = c.get("id")
+            if not cid or cid in seen_ids:
+                continue
+            if base_genres and not (set(c.get("genre_ids") or []) & base_genres):
+                continue
+            seen_ids.add(cid)
+            item = _norm_item(c, media_type=media_type)
+            item["via"] = person.get("name")
+            out.append(item)
+    out.sort(key=lambda x: x.get("popularity") or 0, reverse=True)
+    return out[:limit]
 
 
 # Common Dutch / European providers  -  IDs from TMDB
