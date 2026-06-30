@@ -34,17 +34,18 @@ from config import (
     AUTO_APPROVE_TV_PER_GENRE_LIMIT,
     AUTO_REQUEST_TRENDING_MOVIE_LIMIT,
     AUTO_REQUEST_TRENDING_TV_LIMIT,
+    FAVORITE_ACTOR_PER_ACTOR_LIMIT,
+    FAVORITE_ACTOR_RECENCY_YEARS,
 )
 from webhook_parser import MediaRequest
 
 log = logging.getLogger(__name__)
 
-FAVORITE_ACTOR_PER_ACTOR_LIMIT = 3
-FAVORITE_ACTOR_RECENCY_YEARS = 1
-
 # TMDB TV genre ids for non-scripted formats we never want to auto-queue from an
-# actor's filmography: 10767 Talk, 10763 News, 10764 Reality.
-_NON_SCRIPTED_GENRE_IDS = {10767, 10763, 10764}
+# actor's filmography: 10767 Talk, 10763 News, 10764 Reality, 10766 Soap. These
+# are the formats an actor only ever "guests" on; a real scripted guest role
+# (e.g. Bruce Willis in Friends, a Comedy with a named character) is still kept.
+_NON_SCRIPTED_GENRE_IDS = {10767, 10763, 10764, 10766}
 
 
 def _key(media_type: str) -> str:
@@ -184,14 +185,21 @@ def _is_non_scripted_or_guest(item: dict) -> bool:
 
 
 def _is_recent_or_upcoming(item: dict) -> bool:
-    """True if a filmography credit looks like new/upcoming work rather than an
-    actor's back catalog - favoriting someone shouldn't queue their whole career."""
+    """True if a credit is within the configured recency window. With
+    FAVORITE_ACTOR_RECENCY_YEARS=0 (the default) there is no window and the
+    actor's whole back catalogue qualifies."""
+    try:
+        recency = int(_settings.get("FAVORITE_ACTOR_RECENCY_YEARS", FAVORITE_ACTOR_RECENCY_YEARS))
+    except (TypeError, ValueError):
+        recency = FAVORITE_ACTOR_RECENCY_YEARS
+    if recency <= 0:
+        return True
     year = item.get("year")
     if not year:
         return True
     try:
         import datetime
-        return int(str(year)[:4]) >= datetime.date.today().year - FAVORITE_ACTOR_RECENCY_YEARS
+        return int(str(year)[:4]) >= datetime.date.today().year - recency
     except (ValueError, TypeError):
         return True
 
@@ -205,6 +213,10 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
     own independent remaining budget (None means no cap for that type), so an
     exhausted movie cap doesn't block queueing series for the same actor.
     Returns (movies_added, series_added)."""
+    try:
+        per_actor = int(_settings.get("FAVORITE_ACTOR_PER_ACTOR_LIMIT", FAVORITE_ACTOR_PER_ACTOR_LIMIT))
+    except (TypeError, ValueError):
+        per_actor = FAVORITE_ACTOR_PER_ACTOR_LIMIT
     movies_added = 0
     series_added = 0
     for actor in db.get_favorite_actors():
@@ -223,7 +235,7 @@ def _run_favorite_actors(seen_movies: set[str], seen_series: set[str],
         actor_movies = 0
         actor_series = 0
         for item in detail.get("filmography") or []:
-            if actor_movies + actor_series >= FAVORITE_ACTOR_PER_ACTOR_LIMIT:
+            if per_actor > 0 and actor_movies + actor_series >= per_actor:
                 break
             media_type = item.get("media_type")
             if media_type not in ("movie", "tv"):
