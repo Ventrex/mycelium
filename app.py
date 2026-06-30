@@ -1309,8 +1309,13 @@ def stream_redirect(token: str):
         log.warning("stream: materialize FAILED token=%s ua=%r range=%s (%.1fs)",
                     token, ua, rng, elapsed)
         abort(404)
-    log.info("stream: token=%s → 302 CDN (%.1fs) ua=%r range=%s",
-             token, elapsed, ua, rng)
+    # Players re-hit /stream every second; only log a fresh materialize at INFO,
+    # cache-hit redirects go to DEBUG to avoid flooding the log.
+    if elapsed > 1.0:
+        log.info("stream: token=%s → 302 CDN (%.1fs) ua=%r range=%s",
+                 token, elapsed, ua, rng)
+    else:
+        log.debug("stream: token=%s → 302 CDN (cache) ua=%r range=%s", token, ua, rng)
     return redirect(url, code=302)
 
 

@@ -7,6 +7,7 @@
       "Favorite actors also pull upcoming films (as 'upcoming' requests) and monitor future series",
       "Auto-approve fills the rest of a movie collection when one film is requested (e.g. Toy Story 4 pulls the whole series)",
       "Detail page now shows crew (director/writer/showrunner) and a 'From the same creators' row suggesting other titles by the same writer/showrunner in the same genre",
+      "Fix: episodes gave a playback error / HTTP 400 while movies worked - the catbox stream link was cached for 23h and went stale when the torrent was released; cache is now 1h, requestdl is throttled/retried on 429, and /stream log spam is reduced",
       "Fix: multi-season series only showed season 1 in the library - every season's torrent now gets .strm files (fixed/non-catbox mode)",
       "Trakt watchlist can now auto-request (download) synced items, throttled per sync run so it does not flood TorBox (opt-in via TRAKT_AUTO_REQUEST)",
       "Daily trending auto-request: top trending movies and shows requested once a day, capped per type (opt-in via AUTO_REQUEST_TRENDING)",

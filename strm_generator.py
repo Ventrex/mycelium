@@ -144,6 +144,11 @@ def _strm_path(info: dict) -> Path:
     return media / 'series' / title / f"Season {s:02d}" / f"{title} S{s:02d}E{e:02d}.strm"
 
 
+_requestdl_lock = threading.Lock()
+_requestdl_state = {"last": 0.0}
+_REQUESTDL_MIN_INTERVAL = 0.5  # seconds between requestdl calls (TorBox rate limit)
+
+
 def _get_stream_url(torrent_id: int, file_id: int) -> str | None:
     url = f"{TORBOX_BASE_URL.rstrip('/')}/torrents/requestdl"
     params = {
@@ -152,14 +157,32 @@ def _get_stream_url(torrent_id: int, file_id: int) -> str | None:
         "file_id": file_id,
         "zip_link": "false",
     }
-    try:
-        resp = req_lib.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json() or {}
-        return data.get("data") or None
-    except Exception as exc:
-        log.warning("requestdl failed torrent=%s file=%s: %s", torrent_id, file_id, exc)
-        return None
+    for attempt in range(2):
+        # Throttle: space out requestdl calls so preload/probe bursts don't trip
+        # TorBox's rate limit (429). A 429 here used to leave us serving a stale
+        # cached CDN link that then 400s on playback.
+        with _requestdl_lock:
+            gap = _REQUESTDL_MIN_INTERVAL - (time.monotonic() - _requestdl_state["last"])
+            if gap > 0:
+                time.sleep(gap)
+            _requestdl_state["last"] = time.monotonic()
+        try:
+            resp = req_lib.get(url, params=params, timeout=15)
+            if resp.status_code == 429 and attempt == 0:
+                log.info("requestdl rate-limited torrent=%s file=%s  -  retrying in 3s",
+                         torrent_id, file_id)
+                time.sleep(3)
+                continue
+            resp.raise_for_status()
+            data = resp.json() or {}
+            return data.get("data") or None
+        except Exception as exc:
+            if "429" in str(exc) and attempt == 0:
+                time.sleep(3)
+                continue
+            log.warning("requestdl failed torrent=%s file=%s: %s", torrent_id, file_id, exc)
+            return None
+    return None
 
 
 def _extract_year(name: str) -> int | None:
