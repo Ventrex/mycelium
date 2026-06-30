@@ -208,6 +208,12 @@ AUTO_REQUEST_TRENDING = _env("AUTO_REQUEST_TRENDING", "false").lower() in ("1", 
 AUTO_REQUEST_TRENDING_MOVIE_LIMIT = _env_int("AUTO_REQUEST_TRENDING_MOVIE_LIMIT", 10)
 AUTO_REQUEST_TRENDING_TV_LIMIT = _env_int("AUTO_REQUEST_TRENDING_TV_LIMIT", 10)
 
+# ── MDBList auto-request ──────────────────────────────────────────────────────
+# Each user connects their own MDBList API key (React Settings). When enabled,
+# synced MDBList items are also requested, throttled per sync run (every 30 min).
+MDBLIST_AUTO_REQUEST = _env("MDBLIST_AUTO_REQUEST", "false").lower() in ("1", "true", "yes")
+MDBLIST_AUTO_REQUEST_LIMIT = _env_int("MDBLIST_AUTO_REQUEST_LIMIT", 10)
+
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")
 RADARR_API_KEY = _env("RADARR_API_KEY", "")
