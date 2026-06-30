@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
@@ -25,6 +25,7 @@ const adminItems = [
 export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { data: session } = useQuery({
     queryKey: ['session'],
     queryFn: api.session,
@@ -32,6 +33,13 @@ export default function Layout() {
   });
 
   const isAdmin = session?.user?.role === 'admin';
+
+  // Netflix-style: once signed in but no profile picked yet, go choose one.
+  useEffect(() => {
+    if (session?.profiles_required) {
+      navigate('/profiles');
+    }
+  }, [session?.profiles_required, navigate]);
 
   return (
     <div className="min-h-screen flex bg-bg text-white overflow-x-hidden">
@@ -108,7 +116,7 @@ export default function Layout() {
               <TopbarSearch />
               <TopbarIconLink to="/manual" label="Manual" icon="📖" />
               {session?.user && <RegionPicker region={session.user.region || 'NL'} />}
-              <ProfileMenu username={session?.user?.username} />
+              <ProfileMenu username={session?.user?.username} profile={session?.selected_profile} />
             </div>
           </div>
         </header>
@@ -212,7 +220,7 @@ function TopbarIconLink({ to, label, icon }: { to: string; label: string; icon: 
   );
 }
 
-function ProfileMenu({ username }: { username?: string }) {
+function ProfileMenu({ username, profile }: { username?: string; profile?: { name: string; avatar?: string } | null }) {
   const [open, setOpen] = useState(false);
 
   if (!username) {
@@ -226,6 +234,9 @@ function ProfileMenu({ username }: { username?: string }) {
     );
   }
 
+  const label = profile?.name || username;
+  const avatar = profile?.avatar || '👤';
+
   return (
     <div className="relative">
       <button
@@ -234,15 +245,22 @@ function ProfileMenu({ username }: { username?: string }) {
         className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:border-accent/50 hover:bg-card transition"
         aria-haspopup="menu"
         aria-expanded={open}
-        title={username}
+        title={label}
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-xs">👤</span>
-        <span className="hidden md:inline max-w-28 truncate text-sm">{username}</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-xs">{avatar}</span>
+        <span className="hidden md:inline max-w-28 truncate text-sm">{label}</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 z-50 w-44 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+            <Link
+              to="/profiles"
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white"
+            >
+              Switch profile
+            </Link>
             <Link
               to="/settings"
               onClick={() => setOpen(false)}
