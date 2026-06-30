@@ -107,6 +107,15 @@ export interface AutoApproveSettings {
   max_pages: number;
 }
 
+export interface AutoApproveSettingsInput {
+  schedule_mode: AutoApproveScheduleMode;
+  interval_hours: number;
+  daily_time: string;
+  movie_per_genre_limit: number;
+  tv_per_genre_limit: number;
+  max_pages: number;
+}
+
 export interface TmdbPerson {
   tmdb_id: number;
   media_type: 'person';
