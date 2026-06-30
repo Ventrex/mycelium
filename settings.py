@@ -40,6 +40,7 @@ _BOOL_KEYS = {
     "TRUSTED_PROXY_AUTH",
     "LITE_MODE",
     "TRAKT_AUTO_REQUEST",
+    "AUTO_REQUEST_TRENDING",
 }
 _LIST_KEYS = {
     "QUALITY_PREFERENCE",
@@ -95,6 +96,8 @@ _INT_KEYS = {
     "AUTO_APPROVE_TV_PER_GENRE_LIMIT",
     "AUTO_APPROVE_MAX_PAGES",
     "TRAKT_AUTO_REQUEST_LIMIT",
+    "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
+    "AUTO_REQUEST_TRENDING_TV_LIMIT",
 }
 # Keys whose stored override must be parsed as a float, not left as a string.
 # A missing entry here means a DB override silently shadows the .env float with a
@@ -160,6 +163,8 @@ HOT_RELOAD = {
     "RADARR_URL", "RADARR_API_KEY", "SONARR_URL", "SONARR_API_KEY",
     "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
     "TRAKT_AUTO_REQUEST", "TRAKT_AUTO_REQUEST_LIMIT",
+    "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
+    "AUTO_REQUEST_TRENDING_TV_LIMIT",
 }
 
 # Logical groups for the Settings UI tab. "category" buckets groups under the
@@ -217,6 +222,8 @@ SETTING_GROUPS = [
             "AUTO_UPGRADE_ENABLED", "AUTO_UPGRADE_INTERVAL_HOURS",
             "SEASON_PACK_CONSOLIDATION_ENABLED", "SEASON_PACK_CHECK_INTERVAL_HOURS",
             "TRENDING_PRECACHE_COUNT", "TRENDING_CHECK_INTERVAL_HOURS",
+            "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
+            "AUTO_REQUEST_TRENDING_TV_LIMIT",
             "BLACKLIST_FAIL_THRESHOLD",
         ],
     },
@@ -291,6 +298,9 @@ SETTING_LABELS = {
     "DISCORD_WEBHOOK_URL_SHOWS": "Shows Discord webhook",
     "TRAKT_AUTO_REQUEST": "Auto-request Trakt watchlist",
     "TRAKT_AUTO_REQUEST_LIMIT": "Trakt auto-request limit (per sync)",
+    "AUTO_REQUEST_TRENDING": "Auto-request trending daily",
+    "AUTO_REQUEST_TRENDING_MOVIE_LIMIT": "Trending movies per day",
+    "AUTO_REQUEST_TRENDING_TV_LIMIT": "Trending shows per day",
 }
 
 SETTING_CATEGORIES = [
