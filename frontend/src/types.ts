@@ -42,6 +42,7 @@ export interface TmdbDetail extends TmdbItem {
   number_of_seasons?: number;
   number_of_episodes?: number;
   cast?: Array<{ id?: number; name: string; character: string; profile_path: string | null }>;
+  crew?: Array<{ id?: number; name: string; job: string; profile_path: string | null }>;
   trailers?: Array<{ key: string; name: string; site: string }>;
   providers?: { flatrate: Provider[]; link: string | null };
   recommendations?: TmdbItem[];

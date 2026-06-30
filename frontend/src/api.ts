@@ -87,6 +87,8 @@ export const api = {
     ),
   details: (type: MediaType, id: number) =>
     http<TmdbDetail>(`/ui/api/discover/details?type=${type}&id=${id}`),
+  byCreator: (type: MediaType, id: number) =>
+    http<{ results: TmdbItem[] }>(`/ui/api/discover/by-creator?type=${type}&id=${id}`),
   addToLibrary: (
     tmdb_id: number,
     media_type: MediaType,

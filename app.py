@@ -2107,6 +2107,18 @@ def ui_api_discover_by_provider():
     return jsonify(results=results)
 
 
+@app.get("/ui/api/discover/by-creator")
+def ui_api_discover_by_creator():
+    """Other titles by the same writer/showrunner/director in the same genre."""
+    media = request.args.get("type", "movie")
+    tmdb_id = int(request.args.get("id") or "0")
+    if not tmdb_id:
+        return jsonify(error="id required"), 400
+    results = _filter_discover_results(tmdb.by_creators(media, tmdb_id))
+    _enrich_library_status(results)
+    return jsonify(results=results)
+
+
 @app.get("/ui/api/discover/details")
 def ui_api_discover_details():
     media = request.args.get("type", "movie")
