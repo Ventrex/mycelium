@@ -2703,6 +2703,19 @@ def ui_api_wanted_recheck():
     return jsonify(ok=True, message="wanted recheck started")
 
 
+@app.post("/ui/api/library/series/<imdb_id>/recheck")
+@_csrf.exempt
+def ui_api_series_recheck(imdb_id):
+    """Scan one series for missing seasons/episodes and request what's missing."""
+    def _run():
+        try:
+            monitor.recheck_series(imdb_id)
+        except Exception as exc:
+            logging.getLogger(__name__).error("series-recheck failed for %s: %s", imdb_id, exc)
+    threading.Thread(target=_run, name=f"series-recheck-{imdb_id}", daemon=True).start()
+    return jsonify(ok=True, message="series recheck started")
+
+
 @app.post("/ui/search-all-wanted")
 def ui_search_all_wanted():
     def _run():
