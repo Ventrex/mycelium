@@ -194,6 +194,12 @@ AUTO_APPROVE_TV_PER_GENRE_LIMIT = _env_int(
 )
 AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 
+# Favorite-actor auto-request: how many titles per favorited actor per run
+# (0 = unlimited, capped only by the daily budget) and how far back to go
+# (0 = the actor's whole back catalogue; N = only titles from the last N years).
+FAVORITE_ACTOR_PER_ACTOR_LIMIT = _env_int("FAVORITE_ACTOR_PER_ACTOR_LIMIT", 0)
+FAVORITE_ACTOR_RECENCY_YEARS = _env_int("FAVORITE_ACTOR_RECENCY_YEARS", 0)
+
 # ── Trakt auto-request ────────────────────────────────────────────────────────
 # When enabled, items synced from each user's Trakt watchlist are not just added
 # to the Mycelium watchlist but also requested (downloaded), throttled to

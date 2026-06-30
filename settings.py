@@ -100,6 +100,8 @@ _INT_KEYS = {
     "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
     "AUTO_REQUEST_TRENDING_TV_LIMIT",
     "MDBLIST_AUTO_REQUEST_LIMIT",
+    "FAVORITE_ACTOR_PER_ACTOR_LIMIT",
+    "FAVORITE_ACTOR_RECENCY_YEARS",
 }
 # Keys whose stored override must be parsed as a float, not left as a string.
 # A missing entry here means a DB override silently shadows the .env float with a
@@ -168,6 +170,7 @@ HOT_RELOAD = {
     "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
     "AUTO_REQUEST_TRENDING_TV_LIMIT",
     "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
+    "FAVORITE_ACTOR_PER_ACTOR_LIMIT", "FAVORITE_ACTOR_RECENCY_YEARS",
 }
 
 # Logical groups for the Settings UI tab. "category" buckets groups under the
@@ -228,6 +231,7 @@ SETTING_GROUPS = [
             "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
             "AUTO_REQUEST_TRENDING_TV_LIMIT",
             "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
+            "FAVORITE_ACTOR_PER_ACTOR_LIMIT", "FAVORITE_ACTOR_RECENCY_YEARS",
             "BLACKLIST_FAIL_THRESHOLD",
         ],
     },
@@ -307,6 +311,8 @@ SETTING_LABELS = {
     "AUTO_REQUEST_TRENDING_TV_LIMIT": "Trending shows per day",
     "MDBLIST_AUTO_REQUEST": "Auto-request MDBList items",
     "MDBLIST_AUTO_REQUEST_LIMIT": "MDBList auto-request limit (per sync)",
+    "FAVORITE_ACTOR_PER_ACTOR_LIMIT": "Favorite actor: titles per actor (0 = all)",
+    "FAVORITE_ACTOR_RECENCY_YEARS": "Favorite actor: max age in years (0 = all)",
 }
 
 SETTING_CATEGORIES = [
