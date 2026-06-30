@@ -2563,17 +2563,26 @@ def _kick_off_processing(title: str, imdb_id: str, media_type: str,
         except Exception as exc:
             log.warning("upsert_monitored_series failed: %s", exc)
             monitored = seasons or [1]
+        log.info("Series request: %s  -  monitoring seasons %s (mode=%s)", title, monitored, monitor_mode)
         # 'future' mode: don't eagerly fetch the back-catalog  -  let the monitor
         # pick up episodes as they air. Eagerly process only for all/selected.
         process_seasons = [] if monitor_mode == "future" else monitored
         req = MediaRequest(title=title, media_type="series",
                             imdb_id=imdb_id, seasons=process_seasons, tmdb_id=tmdb_id)
-        if not process_seasons:
-            # Nothing to fetch now; the series is monitored and the periodic
-            # check will grab future episodes.
-            return
-    else:
-        req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[], tmdb_id=tmdb_id)
+
+        def _process_and_fill():
+            try:
+                if process_seasons:
+                    processor.process(req)
+                # Create the wanted-episode rows and immediately try to fetch
+                # anything not cached yet, so a series request is fully tracked
+                # and fills now instead of waiting for the next 6-hourly monitor.
+                monitor.recheck_series(imdb_id)
+            except Exception as exc:
+                log.warning("Series processing failed for %s: %s", title, exc)
+        threading.Thread(target=_process_and_fill, name=f"discover-{imdb_id}", daemon=True).start()
+        return
+    req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[], tmdb_id=tmdb_id)
     threading.Thread(
         target=processor.process, args=(req,),
         name=f"discover-{imdb_id}", daemon=True,
