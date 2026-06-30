@@ -12,6 +12,7 @@ import Movies from './pages/Movies';
 import AutoApprove from './pages/AutoApprove';
 import Blacklist from './pages/Blacklist';
 import Subtitles from './pages/Subtitles';
+import Logs from './pages/Logs';
 import Login from './pages/Login';
 import ProfileSelect from './pages/ProfileSelect';
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="auto-approve" element={<AutoApprove />} />
         <Route path="blacklist" element={<Blacklist />} />
         <Route path="subtitles" element={<Subtitles />} />
+        <Route path="logs" element={<Logs />} />
         <Route path="requests" element={<Requests />} />
         <Route path="wanted" element={<Wanted />} />
         <Route path="settings" element={<Settings />} />

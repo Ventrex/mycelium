@@ -124,6 +124,16 @@ export interface NotificationSettings {
   notify_on_failure: boolean;
 }
 
+export type LogType = 'server' | 'auto_approve' | 'subtitles';
+
+export interface LogEntry {
+  time: string;
+  level: string;
+  type: LogType;
+  name: string;
+  message: string;
+}
+
 export interface TmdbPerson {
   tmdb_id: number;
   media_type: 'person';
