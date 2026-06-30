@@ -32,6 +32,8 @@ from config import (
     AUTO_APPROVE_MOVIE_PER_GENRE_LIMIT,
     AUTO_APPROVE_PER_GENRE_LIMIT,
     AUTO_APPROVE_TV_PER_GENRE_LIMIT,
+    AUTO_REQUEST_TRENDING_MOVIE_LIMIT,
+    AUTO_REQUEST_TRENDING_TV_LIMIT,
 )
 from webhook_parser import MediaRequest
 
@@ -420,5 +422,61 @@ def run(total_limit: int | None = None, tv_limit: int | None = None) -> dict:
     summary["total_queued"] = summary["movies_queued"] + summary["series_queued"]
 
     log.info("Auto-approve run complete: %d movie(s) + %d series = %d queued",
+             summary["movies_queued"], summary["series_queued"], summary["total_queued"])
+    return summary
+
+
+def run_trending(movie_limit: int | None = None, tv_limit: int | None = None) -> dict:
+    """Request the top trending movies and shows, capped per type.
+
+    Reuses the same safety rules as the genre fill: already-requested movies,
+    monitored series, blacklisted titles/people and unreleased titles are
+    skipped and never count toward the cap. Returns a summary.
+    """
+    if movie_limit is None:
+        movie_limit = _settings.get("AUTO_REQUEST_TRENDING_MOVIE_LIMIT", AUTO_REQUEST_TRENDING_MOVIE_LIMIT)
+    if tv_limit is None:
+        tv_limit = _settings.get("AUTO_REQUEST_TRENDING_TV_LIMIT", AUTO_REQUEST_TRENDING_TV_LIMIT)
+    try:
+        movie_limit = int(movie_limit)
+        tv_limit = int(tv_limit)
+    except (TypeError, ValueError):
+        movie_limit, tv_limit = AUTO_REQUEST_TRENDING_MOVIE_LIMIT, AUTO_REQUEST_TRENDING_TV_LIMIT
+
+    seen_movies = {r["imdb_id"] for r in db.get_recent(2000) if r.get("media_type") == "movie" and r.get("imdb_id")}
+    seen_series = {s["imdb_id"] for s in db.get_all_monitored_series() if s.get("imdb_id")}
+    movie_bl = db.get_content_blacklist_ids("movie")
+    tv_bl = db.get_content_blacklist_ids("tv")
+    person_bl = db.get_content_blacklist_ids("person")
+
+    summary = {"movies_queued": 0, "series_queued": 0, "total_queued": 0}
+
+    for media_type, limit, seen, media_bl, queue_fn, key in (
+        ("movie", movie_limit, seen_movies, movie_bl, _queue_movie, "movies_queued"),
+        ("tv", tv_limit, seen_series, tv_bl, _queue_series, "series_queued"),
+    ):
+        if limit <= 0:
+            continue
+        try:
+            items = tmdb.trending(media_type, "week", page=1)
+        except Exception as exc:
+            log.warning("Trending auto-request: fetch failed for %s: %s", media_type, exc)
+            continue
+        for item in items:
+            if summary[key] >= limit:
+                break
+            try:
+                if item.get("tmdb_id") in media_bl or _is_unreleased(item):
+                    continue
+                if _has_blacklisted_person(media_type, item.get("tmdb_id"), person_bl):
+                    continue
+                if queue_fn(item, seen):
+                    summary[key] += 1
+            except Exception as exc:
+                log.warning("Trending auto-request: skipping %s after error: %s",
+                            item.get("title") or item.get("tmdb_id"), exc)
+
+    summary["total_queued"] = summary["movies_queued"] + summary["series_queued"]
+    log.info("Trending auto-request complete: %d movie(s) + %d series = %d queued",
              summary["movies_queued"], summary["series_queued"], summary["total_queued"])
     return summary

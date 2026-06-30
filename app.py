@@ -293,6 +293,16 @@ def _configure_auto_approve_job(target_scheduler: BackgroundScheduler) -> dict:
     return values
 
 
+def _trending_auto_request_job() -> None:
+    """Daily job: request the top trending titles, gated by AUTO_REQUEST_TRENDING."""
+    if not _settings_mod.get("AUTO_REQUEST_TRENDING", False):
+        return
+    try:
+        auto_approve.run_trending()
+    except Exception as exc:
+        log.warning("Trending auto-request job failed: %s", exc)
+
+
 def _start_scheduler() -> BackgroundScheduler:
     # job_defaults: every interval job gets +/-60s jitter to avoid stampede when
     # multiple long-running jobs hit the same minute mark.
@@ -438,6 +448,15 @@ def _start_scheduler() -> BackgroundScheduler:
                      TRENDING_CHECK_INTERVAL_HOURS, _auto_add_total)
 
         _configure_auto_approve_job(scheduler)
+
+        # Daily trending auto-request. Always scheduled; the job itself no-ops
+        # when AUTO_REQUEST_TRENDING is off, so toggling the setting needs no
+        # scheduler reconfiguration.
+        scheduler.add_job(
+            _trending_auto_request_job,
+            trigger="interval", hours=24,
+            id="trending_auto_request", next_run_time=None,
+        )
 
         if CONTINUE_WATCHING_INTERVAL_MINUTES > 0:
             scheduler.add_job(
@@ -2327,6 +2346,14 @@ def ui_api_auto_approve_run_now():
     if not auth.is_admin():
         return jsonify(error="unauthorized"), 401
     summary = auto_approve.run()
+    return jsonify(status="complete", **summary)
+
+
+@app.post("/ui/api/trending-request/run-now")
+def ui_api_trending_request_run_now():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    summary = auto_approve.run_trending()
     return jsonify(status="complete", **summary)
 
 

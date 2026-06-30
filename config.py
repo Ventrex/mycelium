@@ -201,6 +201,13 @@ AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 TRAKT_AUTO_REQUEST = _env("TRAKT_AUTO_REQUEST", "false").lower() in ("1", "true", "yes")
 TRAKT_AUTO_REQUEST_LIMIT = _env_int("TRAKT_AUTO_REQUEST_LIMIT", 10)
 
+# ── Trending auto-request ─────────────────────────────────────────────────────
+# When enabled, the top trending movies and shows are requested once a day,
+# capped per type so it stays manageable.
+AUTO_REQUEST_TRENDING = _env("AUTO_REQUEST_TRENDING", "false").lower() in ("1", "true", "yes")
+AUTO_REQUEST_TRENDING_MOVIE_LIMIT = _env_int("AUTO_REQUEST_TRENDING_MOVIE_LIMIT", 10)
+AUTO_REQUEST_TRENDING_TV_LIMIT = _env_int("AUTO_REQUEST_TRENDING_TV_LIMIT", 10)
+
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")
 RADARR_API_KEY = _env("RADARR_API_KEY", "")
