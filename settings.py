@@ -42,6 +42,7 @@ _BOOL_KEYS = {
     "TRAKT_AUTO_REQUEST",
     "AUTO_REQUEST_TRENDING",
     "MDBLIST_AUTO_REQUEST",
+    "AUTO_APPROVE_FILL_COLLECTIONS",
 }
 _LIST_KEYS = {
     "QUALITY_PREFERENCE",
@@ -171,6 +172,7 @@ HOT_RELOAD = {
     "AUTO_REQUEST_TRENDING_TV_LIMIT",
     "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
     "FAVORITE_ACTOR_PER_ACTOR_LIMIT", "FAVORITE_ACTOR_RECENCY_YEARS",
+    "AUTO_APPROVE_FILL_COLLECTIONS",
 }
 
 # Logical groups for the Settings UI tab. "category" buckets groups under the
@@ -232,6 +234,7 @@ SETTING_GROUPS = [
             "AUTO_REQUEST_TRENDING_TV_LIMIT",
             "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
             "FAVORITE_ACTOR_PER_ACTOR_LIMIT", "FAVORITE_ACTOR_RECENCY_YEARS",
+            "AUTO_APPROVE_FILL_COLLECTIONS",
             "BLACKLIST_FAIL_THRESHOLD",
         ],
     },
@@ -313,6 +316,7 @@ SETTING_LABELS = {
     "MDBLIST_AUTO_REQUEST_LIMIT": "MDBList auto-request limit (per sync)",
     "FAVORITE_ACTOR_PER_ACTOR_LIMIT": "Favorite actor: titles per actor (0 = all)",
     "FAVORITE_ACTOR_RECENCY_YEARS": "Favorite actor: max age in years (0 = all)",
+    "AUTO_APPROVE_FILL_COLLECTIONS": "Auto-approve: fill whole movie collections",
 }
 
 SETTING_CATEGORIES = [

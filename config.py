@@ -199,6 +199,9 @@ AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 # (0 = the actor's whole back catalogue; N = only titles from the last N years).
 FAVORITE_ACTOR_PER_ACTOR_LIMIT = _env_int("FAVORITE_ACTOR_PER_ACTOR_LIMIT", 0)
 FAVORITE_ACTOR_RECENCY_YEARS = _env_int("FAVORITE_ACTOR_RECENCY_YEARS", 0)
+# When auto-approve queues a movie that belongs to a collection (e.g. Toy Story),
+# also queue the rest of that collection so franchises arrive complete.
+AUTO_APPROVE_FILL_COLLECTIONS = _env("AUTO_APPROVE_FILL_COLLECTIONS", "true").lower() in ("1", "true", "yes")
 
 # ── Trakt auto-request ────────────────────────────────────────────────────────
 # When enabled, items synced from each user's Trakt watchlist are not just added
