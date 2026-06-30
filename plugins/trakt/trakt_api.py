@@ -300,14 +300,64 @@ def sync_user_watched(user_id: int, access_token: str) -> int:
     return synced
 
 
+def auto_request_user(user_id: int, limit: int) -> int:
+    """Request (download) up to `limit` not-yet-requested items from this user's
+    Mycelium watchlist. Existing requests and monitored series are skipped, so
+    repeated runs drain the backlog at `limit` items per run instead of
+    re-processing everything. Quality filters are applied by processor.process.
+    Returns the number of new items requested."""
+    if limit <= 0:
+        return 0
+    import processor
+    import tmdb
+    from webhook_parser import MediaRequest
+
+    monitored = {s["imdb_id"] for s in db.get_all_monitored_series() if s.get("imdb_id")}
+    requested = 0
+    for w in db.get_watchlist(user_id):
+        if requested >= limit:
+            break
+        imdb_id = w.get("imdb_id")
+        tmdb_id = w.get("tmdb_id")
+        title = w.get("title") or ""
+        media_type = "movie" if w.get("media_type") == "movie" else "series"
+        if not imdb_id:
+            continue
+        try:
+            if media_type == "movie":
+                if db.get_request_by_imdb(imdb_id):
+                    continue  # already requested at some point
+                if processor.process(MediaRequest(title=title, media_type="movie",
+                                                  imdb_id=imdb_id, seasons=[], tmdb_id=tmdb_id)):
+                    requested += 1
+            else:
+                if imdb_id in monitored:
+                    continue  # already tracked
+                show = tmdb.get_show_info(tmdb_id) if tmdb_id else {}
+                seasons = list(range(1, ((show or {}).get("number_of_seasons") or 1) + 1))
+                db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons)
+                monitored.add(imdb_id)
+                requested += 1
+        except Exception as exc:
+            log.warning("Trakt auto-request failed for %s: %s", title or imdb_id, exc)
+    return requested
+
+
 def sync_all_users() -> None:
     """Background job: sync watchlists + watch history for all connected users."""
+    auto_request = bool(settings.get("TRAKT_AUTO_REQUEST", False))
+    try:
+        limit = int(settings.get("TRAKT_AUTO_REQUEST_LIMIT", 10))
+    except (TypeError, ValueError):
+        limit = 10
     for tok in _get_all_tokens():
         try:
             tok = refresh_if_needed(tok)
             wl = sync_user_watchlist(tok["user_id"], tok["access_token"])
             watched = sync_user_watched(tok["user_id"], tok["access_token"])
-            log.info("Trakt sync: user %d  -  %d watchlist, %d watched", tok["user_id"], wl, watched)
+            requested = auto_request_user(tok["user_id"], limit) if auto_request else 0
+            log.info("Trakt sync: user %d  -  %d watchlist, %d watched, %d auto-requested",
+                     tok["user_id"], wl, watched, requested)
         except Exception as exc:
             log.warning("Trakt sync failed for user %d: %s", tok["user_id"], exc)
 

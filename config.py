@@ -194,6 +194,13 @@ AUTO_APPROVE_TV_PER_GENRE_LIMIT = _env_int(
 )
 AUTO_APPROVE_MAX_PAGES = _env_int("AUTO_APPROVE_MAX_PAGES", 10)
 
+# ── Trakt auto-request ────────────────────────────────────────────────────────
+# When enabled, items synced from each user's Trakt watchlist are not just added
+# to the Mycelium watchlist but also requested (downloaded), throttled to
+# TRAKT_AUTO_REQUEST_LIMIT new items per sync run (sync runs every 30 min).
+TRAKT_AUTO_REQUEST = _env("TRAKT_AUTO_REQUEST", "false").lower() in ("1", "true", "yes")
+TRAKT_AUTO_REQUEST_LIMIT = _env_int("TRAKT_AUTO_REQUEST_LIMIT", 10)
+
 # ── Radarr / Sonarr import ────────────────────────────────────────────────────
 RADARR_URL = _env("RADARR_URL", "")
 RADARR_API_KEY = _env("RADARR_API_KEY", "")
