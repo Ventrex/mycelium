@@ -2312,6 +2312,16 @@ def ui_api_notification_settings_set():
     return jsonify(status="saved")
 
 
+@app.get("/ui/api/logs")
+def ui_api_logs():
+    if not auth.is_admin():
+        return jsonify(error="unauthorized"), 401
+    log_type = request.args.get("type", "server")
+    n = request.args.get("n", default=400, type=int) or 400
+    n = max(50, min(n, 1000))
+    return jsonify(logs=log_buffer.get_entries(n, log_type))
+
+
 @app.get("/ui/api/content-blacklist")
 def ui_api_content_blacklist_get():
     kind = request.args.get("kind")

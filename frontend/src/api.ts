@@ -17,6 +17,8 @@ import type {
   AutoApproveSettings,
   AutoApproveSettingsInput,
   NotificationSettings,
+  LogType,
+  LogEntry,
   TmdbPerson,
   PersonDetail,
   Collection,
@@ -167,6 +169,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(settings),
     }),
+
+  // Logs (admin-only)
+  logs: (type: LogType = 'server') =>
+    http<{ logs: LogEntry[] }>(`/ui/api/logs?type=${type}`),
 
   // Notification settings (Discord webhooks, admin-only)
   notificationSettingsGet: () =>
