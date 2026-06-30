@@ -27,6 +27,7 @@ All notable changes to Mycelium are documented in this file.
 
 ### Fixed
 
+- **Multi-season series only got season 1 in the library**: when a series request spanned several seasons, each season is its own torrent pack, but only the first winning pack was materialised into `.strm` files. The remaining seasons were added to TorBox but never written to disk, so Jellyfin (and the folders) showed only Season 1. Every season's winning torrent now gets `.strm` files generated. (Catbox/lazy mode already wrote per-season during registration and is unaffected.)
 - **Type-checking is clean again**: `tsc --noEmit` now passes with no errors. Added the missing Vite client types (`vite-env.d.ts`) so `import.meta.glob` in the plugin loader is typed, and completed the `TmdbItem.imdb_id` / `WatchlistItem.library_status` interfaces. This restores `tsc` as a guard against latent undefined-reference bugs like the blank-screen crash below.
 - **Whole SPA showed a blank screen**: `Layout.tsx` called `useNavigate()` without importing it (an unused leftover), throwing a `ReferenceError` that crashed the entire React app on render. The dead call was removed so the app loads again.
 - **Notifications crashed with `NameError: _discord_url_for`**: `notify.send()` called a helper that was never defined, so every Discord/Telegram notification raised and sent nothing. The helper is now implemented and selects the movies/shows webhook with a fallback to the default.
