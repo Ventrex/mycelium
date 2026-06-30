@@ -28,7 +28,12 @@ from config import CATBOX_HOST, CATBOX_IDLE_MINUTES
 log = logging.getLogger(__name__)
 
 
-_URL_CACHE_TTL_SEC = 82800  # 23 hours  -  within TorBox CDN URL 24h validity
+# 1 hour. The TorBox CDN link is valid for ~24h, but the *torrent* it points to
+# can disappear sooner (idle-release after CATBOX_IDLE_MINUTES, or TorBox
+# eviction), after which the cached link 400s. Caching for only ~1h means a link
+# is reused only while the just-played torrent is still alive, and a stale link
+# self-heals on the next play instead of returning 400 for many hours.
+_URL_CACHE_TTL_SEC = 3600
 ON_PLAY_READY_TIMEOUT_SEC = 45  # max wait on-play before giving up (cached = seconds)
 _url_cache: dict[str, tuple[str, float]] = {}
 _url_cache_lock = threading.Lock()
