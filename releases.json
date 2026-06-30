@@ -8,6 +8,7 @@
       "Auto-Approve: each genre fills to its own independent per-genre target; movies and series have separate limits so they no longer starve each other",
       "Auto-Approve: scheduling (Disabled / Every hour / Every X hours / Daily at HH:MM) and per-genre limits are now editable from the Auto-Approve tab",
       "Discord notifications can be split into separate movies and shows webhooks, each falling back to the default webhook",
+      "Notifications (Discord webhooks + notify toggles) are now configurable from the React Settings page, not only the /admin dashboard",
       "Fix: notifications crashed with NameError (_discord_url_for) and sent nothing"
     ]
   },

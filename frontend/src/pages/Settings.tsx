@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { usePlugins } from '../hooks/usePlugins';
 import PluginSettingsCard from '../components/PluginSettingsCard';
+import type { NotificationSettings } from '../types';
 
 export default function Settings() {
   const { plugins } = usePlugins();
@@ -13,10 +14,13 @@ export default function Settings() {
     return anyFieldEnabled || !!p.settings_ui;
   });
 
+  const isAdmin = (session?.user as any)?.role === 'admin';
+
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
       <PreferencesCard />
+      {isAdmin && <NotificationsCard />}
 
       {visiblePlugins.length > 0 && (
         <>
@@ -150,6 +154,89 @@ function PreferencesCard() {
             </div>
           </div>
         </label>
+      </div>
+    </div>
+  );
+}
+
+
+function NotificationsCard() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['notification-settings'],
+    queryFn: api.notificationSettingsGet,
+  });
+  const [form, setForm] = useState<NotificationSettings | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (data) setForm(data);
+  }, [data]);
+
+  const mutation = useMutation({
+    mutationFn: () => api.notificationSettingsSet(form as NotificationSettings),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notification-settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  if (isLoading || !form) {
+    return (
+      <div className="bg-card rounded-lg border border-border p-6">
+        <h2 className="text-base font-bold mb-1">Notifications</h2>
+        <p className="text-muted text-xs">Loading…</p>
+      </div>
+    );
+  }
+
+  const field = (key: keyof NotificationSettings, label: string, placeholder: string) => (
+    <div>
+      <label className="block text-xs text-muted mb-1">{label}</label>
+      <input
+        type="url"
+        value={(form[key] as string) || ''}
+        placeholder={placeholder}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+      />
+    </div>
+  );
+
+  const toggle = (key: 'notify_on_success' | 'notify_on_failure', label: string) => (
+    <label className="flex items-center gap-3 cursor-pointer select-none"
+      onClick={() => setForm({ ...form, [key]: !form[key] })}>
+      <div className={`w-10 h-5 rounded-full transition-colors flex items-center px-0.5
+          ${form[key] ? 'bg-accent' : 'bg-border'}`}>
+        <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform
+          ${form[key] ? 'translate-x-5' : 'translate-x-0'}`} />
+      </div>
+      <span className="text-sm">{label}</span>
+    </label>
+  );
+
+  return (
+    <div className="bg-card rounded-lg border border-border p-6">
+      <h2 className="text-base font-bold mb-1">Notifications</h2>
+      <p className="text-muted text-xs mb-4">
+        Discord webhooks for new media. Movie and show webhooks fall back to the default when left empty.
+      </p>
+      <div className="space-y-3 max-w-xl">
+        {field('discord_webhook_url', 'Default Discord webhook', 'https://discord.com/api/webhooks/…')}
+        {field('discord_webhook_url_movies', 'Movies Discord webhook', 'Optional, falls back to default')}
+        {field('discord_webhook_url_shows', 'Shows Discord webhook', 'Optional, falls back to default')}
+        <div className="flex flex-wrap gap-6 pt-1">
+          {toggle('notify_on_success', 'Notify on success')}
+          {toggle('notify_on_failure', 'Notify on failure')}
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}
+            className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 font-semibold text-sm">
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </button>
+          {saved && <span className="text-ok text-sm">Saved.</span>}
+        </div>
       </div>
     </div>
   );

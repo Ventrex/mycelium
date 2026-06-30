@@ -116,6 +116,14 @@ export interface AutoApproveSettingsInput {
   max_pages: number;
 }
 
+export interface NotificationSettings {
+  discord_webhook_url: string;
+  discord_webhook_url_movies: string;
+  discord_webhook_url_shows: string;
+  notify_on_success: boolean;
+  notify_on_failure: boolean;
+}
+
 export interface TmdbPerson {
   tmdb_id: number;
   media_type: 'person';
