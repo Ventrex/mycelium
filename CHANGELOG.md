@@ -24,6 +24,7 @@ All notable changes to Mycelium are documented in this file.
 
 ### Fixed
 
+- **Type-checking is clean again**: `tsc --noEmit` now passes with no errors. Added the missing Vite client types (`vite-env.d.ts`) so `import.meta.glob` in the plugin loader is typed, and completed the `TmdbItem.imdb_id` / `WatchlistItem.library_status` interfaces. This restores `tsc` as a guard against latent undefined-reference bugs like the blank-screen crash below.
 - **Whole SPA showed a blank screen**: `Layout.tsx` called `useNavigate()` without importing it (an unused leftover), throwing a `ReferenceError` that crashed the entire React app on render. The dead call was removed so the app loads again.
 - **Notifications crashed with `NameError: _discord_url_for`**: `notify.send()` called a helper that was never defined, so every Discord/Telegram notification raised and sent nothing. The helper is now implemented and selects the movies/shows webhook with a fallback to the default.
 - **Auto-approve crashed on a saved minimum-rating**: `AUTO_ADD_MIN_RATING` was not registered as a float setting, so a value saved from the Settings UI came back as a string and the rating comparison (`rating < min_rating`) raised a `TypeError` that aborted the entire auto-approve run, queueing nothing. Float overrides are now parsed correctly, the rating/votes comparison coerces defensively, and one malformed title can no longer abort the whole run.
