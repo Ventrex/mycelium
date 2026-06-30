@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.6.0-dev",
+    "date": "2026-06-30",
+    "notes": [
+      "Mobile-friendly layout: collapsible sidebar drawer with hamburger, overlay and close button; no horizontal overflow; desktop unchanged",
+      "Fix: whole app showed a blank screen due to an undefined useNavigate call in the layout",
+      "Auto-Approve: each genre fills to its own independent per-genre target; movies and series have separate limits so they no longer starve each other",
+      "Auto-Approve: scheduling (Disabled / Every hour / Every X hours / Daily at HH:MM) and per-genre limits are now editable from the Auto-Approve tab",
+      "Discord notifications can be split into separate movies and shows webhooks, each falling back to the default webhook",
+      "Fix: notifications crashed with NameError (_discord_url_for) and sent nothing"
+    ]
+  },
+  {
     "version": "0.5.2",
     "date": "2026-06-12",
     "notes": [

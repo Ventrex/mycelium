@@ -66,6 +66,24 @@ def _notification_message(message: str, details: dict) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def _discord_url_for(media_type: str | None) -> str:
+    """Pick the Discord webhook for this media type, falling back to the default.
+
+    Movies use DISCORD_WEBHOOK_URL_MOVIES and series use DISCORD_WEBHOOK_URL_SHOWS;
+    when the type-specific hook is empty (or the media type is unknown) the shared
+    DISCORD_WEBHOOK_URL is used instead. Returns "" when nothing is configured, in
+    which case no Discord message is sent.
+    """
+    default = (settings.get("DISCORD_WEBHOOK_URL", "") or "").strip()
+    if media_type == "movie":
+        specific = (settings.get("DISCORD_WEBHOOK_URL_MOVIES", "") or "").strip()
+    elif media_type in ("tv", "show", "series"):
+        specific = (settings.get("DISCORD_WEBHOOK_URL_SHOWS", "") or "").strip()
+    else:
+        specific = ""
+    return specific or default
+
+
 def _discord(url: str, title: str, message: str, success: bool, *, details: dict | None = None) -> None:
     color = 0x4ADE80 if success else 0xF87171
     embed = {"title": title, "description": message[:4096], "color": color}

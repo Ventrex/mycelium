@@ -65,3 +65,37 @@ def test_discord_embed_includes_series_seasons(monkeypatch):
 
     fields = {field["name"]: field["value"] for field in posted["json"]["embeds"][0]["fields"]}
     assert fields["Seizoenen"] == "3 seizoenen · aangevraagd: S01, S02"
+
+
+def _patch_webhooks(monkeypatch, **values):
+    monkeypatch.setattr(notify.settings, "get", lambda key, default=None: values.get(key, default))
+
+
+def test_discord_url_movie_uses_movies_webhook(monkeypatch):
+    _patch_webhooks(monkeypatch,
+                    DISCORD_WEBHOOK_URL="https://discord.example/default",
+                    DISCORD_WEBHOOK_URL_MOVIES="https://discord.example/movies",
+                    DISCORD_WEBHOOK_URL_SHOWS="https://discord.example/shows")
+    assert notify._discord_url_for("movie") == "https://discord.example/movies"
+
+
+def test_discord_url_series_uses_shows_webhook(monkeypatch):
+    _patch_webhooks(monkeypatch,
+                    DISCORD_WEBHOOK_URL="https://discord.example/default",
+                    DISCORD_WEBHOOK_URL_MOVIES="https://discord.example/movies",
+                    DISCORD_WEBHOOK_URL_SHOWS="https://discord.example/shows")
+    assert notify._discord_url_for("tv") == "https://discord.example/shows"
+    assert notify._discord_url_for("series") == "https://discord.example/shows"
+
+
+def test_discord_url_falls_back_to_default(monkeypatch):
+    _patch_webhooks(monkeypatch, DISCORD_WEBHOOK_URL="https://discord.example/default")
+    assert notify._discord_url_for("movie") == "https://discord.example/default"
+    assert notify._discord_url_for("tv") == "https://discord.example/default"
+    assert notify._discord_url_for(None) == "https://discord.example/default"
+
+
+def test_discord_url_empty_when_nothing_configured(monkeypatch):
+    _patch_webhooks(monkeypatch)
+    assert notify._discord_url_for("movie") == ""
+    assert notify._discord_url_for("tv") == ""
