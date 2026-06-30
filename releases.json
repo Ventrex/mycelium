@@ -11,6 +11,7 @@
       "Notifications (Discord webhooks + notify toggles) are now configurable from the React Settings page, not only the /admin dashboard",
       "Topbar search is now a real search bar instead of an icon button",
       "New admin-only Logs page in the React UI with Server / Auto-Approve / Subtitles tabs, newest-first and auto-refresh",
+      "Netflix-style profile selection after login: multiple profiles per account with avatar/age-rating, auto-created default, shown top-right with a Switch profile option",
       "Fix: notifications crashed with NameError (_discord_url_for) and sent nothing"
     ]
   },
