@@ -104,6 +104,15 @@ export default function DetailModal({
   const [playEp, setPlayEp] = useState<{ season: number; episode: number } | null>(null);
   const [monitorMode, setMonitorMode] = useState<'all' | 'future' | 'selected'>('all');
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>([]);
+  const [fillMsg, setFillMsg] = useState('');
+  const fillMissingMut = useMutation({
+    mutationFn: () =>
+      detail?.imdb_id ? api.seriesRecheck(detail.imdb_id) : Promise.reject(new Error('no imdb id')),
+    onSuccess: () => {
+      setFillMsg('Checking for missing seasons/episodes…');
+      setTimeout(() => setFillMsg(''), 5000);
+    },
+  });
 
   const addMutation = useMutation({
     mutationFn: () =>
@@ -530,6 +539,18 @@ export default function DetailModal({
                       </button>
                     );
                   })}
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={() => fillMissingMut.mutate()}
+                  disabled={fillMissingMut.isPending || !detail.imdb_id}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted hover:text-white hover:border-accent/50 transition disabled:opacity-60"
+                  title="Scan this series for missing seasons/episodes and request them"
+                >
+                  {fillMissingMut.isPending ? 'Checking…' : '↺ Fill missing episodes'}
+                </button>
+                {fillMsg && <span className="text-xs text-ok">{fillMsg}</span>}
               </div>
               {browseSeason !== null && (
                 <EpisodeBrowser

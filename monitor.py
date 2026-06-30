@@ -173,6 +173,57 @@ def run_series_check() -> None:
     log.info("Monitor: series check complete")
 
 
+def recheck_series(imdb_id: str) -> dict:
+    """Re-scan one monitored series for missing whole seasons / episodes and
+    immediately request anything that's missing. Returns {checked, requested}."""
+    series = db.get_monitored_series_by_imdb(imdb_id)
+    if not series:
+        return {"checked": 0, "requested": 0, "error": "not monitored"}
+    import processor
+    tmdb_id = series.get("tmdb_id")
+    title = series.get("title")
+    monitor_mode = series.get("monitor_mode") or "all"
+    seasons = [int(s) for s in (series.get("seasons") or "1").split(",") if s.strip().isdigit()]
+
+    # Pick up newly announced seasons too (except in 'selected' mode).
+    if monitor_mode in ("all", "future") and tmdb_id:
+        try:
+            show = tmdb.get_show_info(tmdb_id)
+            total = (show or {}).get("number_of_seasons") or 0
+            merged = sorted(set(seasons) | set(range(1, total + 1)))
+            if merged != seasons:
+                seasons = merged
+                db.update_monitored_series(series["id"], seasons=seasons)
+        except Exception as exc:
+            log.debug("recheck_series: season detection failed for %s: %s", title, exc)
+
+    _sync_wanted(imdb_id, tmdb_id, title, seasons,
+                 monitor_mode=monitor_mode, since=series.get("added_at_date"))
+
+    today = _TODAY()
+    catbox_mode = _settings.get("CATBOX_MODE", False)
+    checked = requested = 0
+    for ep in db.get_all_wanted_episodes():
+        if ep.get("imdb_id") != imdb_id or ep.get("status") != "wanted":
+            continue
+        checked += 1
+        air_date = ep.get("air_date")
+        if air_date and air_date > today:
+            continue
+        if strm_exists_episode(ep["title"], ep["season"], ep["episode"]):
+            db.mark_episode_status(ep["imdb_id"], ep["season"], ep["episode"], "found")
+            continue
+        try:
+            if _retry_episode(ep):
+                requested += 1
+        except processor.RateLimited:
+            log.info("recheck_series: rate limited  -  stopping early for %s", title)
+            if not catbox_mode:
+                break
+    log.info("Recheck series %s: %d wanted checked, %d requested", title, checked, requested)
+    return {"checked": checked, "requested": requested}
+
+
 def run_series_backfill() -> dict:
     """Import all series from Sonarr, then run a full series check to create .strm files.
     Combines import_sonarr + run_series_check in one shot.

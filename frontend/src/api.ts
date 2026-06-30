@@ -375,6 +375,8 @@ export const api = {
   // Wanted lists
   wantedMovies: () => http<{ items: WantedMovie[] }>('/ui/api/wanted-movies'),
   wantedRecheck: () => http<{ ok: boolean; message?: string }>('/ui/api/wanted-recheck', { method: 'POST' }),
+  seriesRecheck: (imdbId: string) =>
+    http<{ ok: boolean; message?: string }>(`/ui/api/library/series/${imdbId}/recheck`, { method: 'POST' }),
   wantedEpisodes: () => http<{ items: WantedEpisode[] }>('/ui/api/wanted-episodes'),
 
   // Failed processing requests
