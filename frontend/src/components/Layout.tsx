@@ -24,7 +24,6 @@ const adminItems = [
 export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
   const { data: session } = useQuery({
     queryKey: ['session'],
     queryFn: api.session,
@@ -34,11 +33,12 @@ export default function Layout() {
   const isAdmin = session?.user?.role === 'admin';
 
   return (
-    <div className="min-h-screen flex bg-bg text-white">
+    <div className="min-h-screen flex bg-bg text-white overflow-x-hidden">
       {/* Sidebar (desktop) + Drawer (mobile) */}
       <aside
         className={`
-          fixed lg:sticky top-0 left-0 h-screen w-56 bg-card border-r border-border z-40
+          fixed lg:sticky top-0 left-0 h-screen w-[min(14rem,85vw)] lg:w-56 max-w-full
+          bg-card border-r border-border z-40 flex flex-col
           transition-transform duration-200
           ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
         `}
@@ -58,17 +58,26 @@ export default function Layout() {
             <circle cx="20" cy="5"  r="2.2" fill="#5eead4"/>
             <circle cx="20" cy="35" r="2.2" fill="#5eead4"/>
           </svg>
-          <span className="font-mono font-bold tracking-wide text-lg text-white">
+          <span className="font-mono font-bold tracking-wide text-lg text-white truncate">
             myc<span className="text-accent-2">3</span>l<span className="text-accent-2">1</span>um
           </span>
+          <button
+            className="lg:hidden ml-auto -mr-2 p-2 rounded text-muted hover:text-white hover:bg-bg"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Close menu"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
-        <nav className="py-3">
+        <nav className="flex-1 overflow-y-auto py-3">
           <SidebarSection title="" items={navItems} onClick={() => setDrawerOpen(false)} />
           {isAdmin && (
             <SidebarSection title="Manage" items={adminItems} onClick={() => setDrawerOpen(false)} />
           )}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border text-center text-[10px] text-muted opacity-50">
+        <div className="shrink-0 p-4 border-t border-border text-center text-[10px] text-muted opacity-50">
           v0.2.0-beta
         </div>
       </aside>
@@ -83,9 +92,9 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur border-b border-border">
-          <div className="flex items-center gap-3 px-4 lg:px-8 py-3">
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 lg:px-8 py-3">
             <button
-              className="lg:hidden p-2 -ml-2 hover:bg-card rounded text-white"
+              className="lg:hidden shrink-0 p-2 -ml-1 border border-border rounded-lg text-white hover:bg-card hover:border-accent/50 transition"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
@@ -94,7 +103,7 @@ export default function Layout() {
               </svg>
             </button>
             <Breadcrumb path={location.pathname} />
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
               <TopbarIconLink to="/search" label="Search" icon="🔍" />
               <TopbarIconLink to="/manual" label="Manual" icon="📖" />
               {session?.user && <RegionPicker region={session.user.region || 'NL'} />}
@@ -102,7 +111,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <main className="flex-1 px-4 lg:px-8 py-6">
+        <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-8 py-4 sm:py-6">
           <Outlet />
         </main>
       </div>
@@ -329,6 +338,6 @@ function Breadcrumb({ path }: { path: string }) {
     '/login': 'Sign in',
   };
   const title = map[path] || 'Mycelium';
-  return <h1 className="font-semibold text-lg">{title}</h1>;
+  return <h1 className="font-semibold text-base sm:text-lg truncate min-w-0">{title}</h1>;
 }
 
