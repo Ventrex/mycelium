@@ -41,6 +41,7 @@ _BOOL_KEYS = {
     "LITE_MODE",
     "TRAKT_AUTO_REQUEST",
     "AUTO_REQUEST_TRENDING",
+    "MDBLIST_AUTO_REQUEST",
 }
 _LIST_KEYS = {
     "QUALITY_PREFERENCE",
@@ -98,6 +99,7 @@ _INT_KEYS = {
     "TRAKT_AUTO_REQUEST_LIMIT",
     "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
     "AUTO_REQUEST_TRENDING_TV_LIMIT",
+    "MDBLIST_AUTO_REQUEST_LIMIT",
 }
 # Keys whose stored override must be parsed as a float, not left as a string.
 # A missing entry here means a DB override silently shadows the .env float with a
@@ -165,6 +167,7 @@ HOT_RELOAD = {
     "TRAKT_AUTO_REQUEST", "TRAKT_AUTO_REQUEST_LIMIT",
     "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
     "AUTO_REQUEST_TRENDING_TV_LIMIT",
+    "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
 }
 
 # Logical groups for the Settings UI tab. "category" buckets groups under the
@@ -224,6 +227,7 @@ SETTING_GROUPS = [
             "TRENDING_PRECACHE_COUNT", "TRENDING_CHECK_INTERVAL_HOURS",
             "AUTO_REQUEST_TRENDING", "AUTO_REQUEST_TRENDING_MOVIE_LIMIT",
             "AUTO_REQUEST_TRENDING_TV_LIMIT",
+            "MDBLIST_AUTO_REQUEST", "MDBLIST_AUTO_REQUEST_LIMIT",
             "BLACKLIST_FAIL_THRESHOLD",
         ],
     },
@@ -301,6 +305,8 @@ SETTING_LABELS = {
     "AUTO_REQUEST_TRENDING": "Auto-request trending daily",
     "AUTO_REQUEST_TRENDING_MOVIE_LIMIT": "Trending movies per day",
     "AUTO_REQUEST_TRENDING_TV_LIMIT": "Trending shows per day",
+    "MDBLIST_AUTO_REQUEST": "Auto-request MDBList items",
+    "MDBLIST_AUTO_REQUEST_LIMIT": "MDBList auto-request limit (per sync)",
 }
 
 SETTING_CATEGORIES = [

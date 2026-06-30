@@ -125,6 +125,11 @@ export interface NotificationSettings {
   notify_on_failure: boolean;
 }
 
+export interface MdblistStatus {
+  connected: boolean;
+  synced_at: string | null;
+}
+
 export type LogType = 'server' | 'auto_approve' | 'subtitles';
 
 export interface LogEntry {

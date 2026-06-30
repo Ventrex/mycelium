@@ -20,6 +20,7 @@ export default function Settings() {
     <div className="space-y-6">
       <ChangePasswordCard />
       <PreferencesCard />
+      <MDBListCard />
       {isAdmin && <NotificationsCard />}
 
       {visiblePlugins.length > 0 && (
@@ -155,6 +156,73 @@ function PreferencesCard() {
           </div>
         </label>
       </div>
+    </div>
+  );
+}
+
+
+function MDBListCard() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ['mdblist-status'], queryFn: api.mdblistStatus });
+  const [key, setKey] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const saveMut = useMutation({
+    mutationFn: () => api.mdblistSetKey(key),
+    onSuccess: () => { setKey(''); setMsg('Saved.'); qc.invalidateQueries({ queryKey: ['mdblist-status'] }); setTimeout(() => setMsg(''), 2000); },
+  });
+  const clearMut = useMutation({
+    mutationFn: () => api.mdblistClear(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mdblist-status'] }),
+  });
+  const syncMut = useMutation({
+    mutationFn: () => api.mdblistSync(),
+    onSuccess: (r) => { setMsg(`Synced ${r.added} items.`); qc.invalidateQueries({ queryKey: ['mdblist-status'] }); setTimeout(() => setMsg(''), 3000); },
+  });
+
+  const connected = !!data?.connected;
+
+  return (
+    <div className="bg-card rounded-lg border border-border p-6">
+      <h2 className="text-base font-bold mb-1">MDBList</h2>
+      <p className="text-muted text-xs mb-4">
+        Connect your personal MDBList API key to sync your lists into your watchlist. Find it at mdblist.com → Preferences → API access.
+      </p>
+      {isLoading ? (
+        <p className="text-muted text-xs">Loading…</p>
+      ) : connected ? (
+        <div className="space-y-3 max-w-md">
+          <p className="text-sm">Connected. {data?.synced_at && <span className="text-xs text-muted">Last synced: {data.synced_at}</span>}</p>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => syncMut.mutate()} disabled={syncMut.isPending}
+              className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 font-semibold text-sm">
+              {syncMut.isPending ? 'Syncing…' : 'Sync now'}
+            </button>
+            <button type="button" onClick={() => clearMut.mutate()} disabled={clearMut.isPending}
+              className="px-3 py-2 rounded-lg border border-border text-sm text-red-400 hover:bg-bg">
+              Disconnect
+            </button>
+            {msg && <span className="text-ok text-sm">{msg}</span>}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 max-w-md">
+          <input
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="MDBList API key"
+            className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+          />
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => saveMut.mutate()} disabled={!key.trim() || saveMut.isPending}
+              className="px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:opacity-60 font-semibold text-sm">
+              {saveMut.isPending ? 'Saving…' : 'Connect'}
+            </button>
+            {msg && <span className="text-ok text-sm">{msg}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

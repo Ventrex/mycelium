@@ -17,6 +17,7 @@ import type {
   AutoApproveSettings,
   AutoApproveSettingsInput,
   NotificationSettings,
+  MdblistStatus,
   LogType,
   LogEntry,
   TmdbPerson,
@@ -173,6 +174,16 @@ export const api = {
   // Logs (admin-only)
   logs: (type: LogType = 'server') =>
     http<{ logs: LogEntry[] }>(`/ui/api/logs?type=${type}`),
+
+  // MDBList (per-user API key)
+  mdblistStatus: () => http<MdblistStatus>('/ui/api/mdblist/status'),
+  mdblistSetKey: (api_key: string) =>
+    http<{ status: string }>('/ui/api/mdblist/key', {
+      method: 'POST',
+      body: JSON.stringify({ api_key }),
+    }),
+  mdblistClear: () => http<{ status: string }>('/ui/api/mdblist/clear', { method: 'POST' }),
+  mdblistSync: () => http<{ status: string; added: number }>('/ui/api/mdblist/sync', { method: 'POST' }),
 
   // Notification settings (Discord webhooks, admin-only)
   notificationSettingsGet: () =>
