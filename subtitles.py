@@ -21,9 +21,15 @@ _BASE = "https://api.opensubtitles.com/api/v1"
 # without it, requests use the anonymous quota (5 downloads/day) regardless of
 # the account's real tier. Cached across calls, re-fetched near expiry or on 401.
 _LOGIN_TOKEN_TTL_SEC = 23 * 3600
+# A backfill run can call _login() hundreds of times (once per search/download).
+# Without a cooldown, a single bad password or a rate-limited /login response
+# gets retried on every single one of those calls in a tight loop, hammering
+# OpenSubtitles' login endpoint until it 429s everything else too.
+_LOGIN_FAILURE_COOLDOWN_SEC = 300
 _login_lock = threading.Lock()
 _login_token: str | None = None
 _login_token_expires = 0.0
+_login_last_failure = 0.0
 
 
 def _api_key() -> str:
@@ -59,13 +65,16 @@ def _login(force: bool = False) -> str | None:
     quota instead of the anonymous 5/day. Returns the bearer token, or None if
     no credentials are configured or login fails (caller falls back to
     anonymous requests)."""
-    global _login_token, _login_token_expires
+    global _login_token, _login_token_expires, _login_last_failure
     username, password = _credentials()
     if not username or not password:
         return None
     with _login_lock:
         if not force and _login_token and time.time() < _login_token_expires:
             return _login_token
+        now = time.time()
+        if not force and now < _login_last_failure + _LOGIN_FAILURE_COOLDOWN_SEC:
+            return None
         try:
             r = requests.post(
                 f"{_BASE}/login",
@@ -77,14 +86,17 @@ def _login(force: bool = False) -> str | None:
             token = (r.json() or {}).get("token")
             if not token:
                 log.warning("OpenSubtitles login: no token in response")
+                _login_last_failure = now
                 return None
             _login_token = token
-            _login_token_expires = time.time() + _LOGIN_TOKEN_TTL_SEC
+            _login_token_expires = now + _LOGIN_TOKEN_TTL_SEC
             log.info("OpenSubtitles: logged in as %s", username)
             return token
         except Exception as exc:
-            log.warning("OpenSubtitles login failed: %s", exc)
+            log.warning("OpenSubtitles login failed: %s (retrying in %ds)",
+                        exc, _LOGIN_FAILURE_COOLDOWN_SEC)
             _login_token = None
+            _login_last_failure = now
             return None
 
 
