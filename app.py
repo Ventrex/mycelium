@@ -1837,7 +1837,12 @@ def ui_api_retry_queue():
 
 @app.get("/ui/api/requests/all")
 def ui_api_all_requests():
-    rows = db.get_recent(5000)
+    """Movies from the requests table plus every monitored series (which never
+    get a requests row  -  only movies go through processor.process()). Series
+    rows carry a `seasons` list so the UI can show season/episode status."""
+    import library_status
+    rows = db.get_recent(5000) + library_status.series_rows()
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return jsonify(items=rows)
 
 

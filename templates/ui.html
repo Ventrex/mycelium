@@ -502,7 +502,7 @@
   <div id="tab-requests" class="tab-pane">
     <div class="section-hdr">
       <span class="section-title">All Requests</span>
-      <span class="dim" style="font-size:11px">All media requests in the system</span>
+      <span class="dim" style="font-size:11px">Every movie and monitored series (including Auto-Approve) - click a series title to expand seasons/episodes</span>
     </div>
     <input type="text" class="search-bar" placeholder="Search..." data-filter="requests-table">
     <div class="table-wrap">
@@ -1504,19 +1504,35 @@
       const r = await fetch('/ui/api/requests/all');
       const d = await r.json();
       const statusCls = {success:'color:var(--green)', wanted:'color:var(--amber)', upcoming:'color:var(--indigo)', failed:'color:var(--red)', pending:'color:var(--muted)'};
+      let detailSeq = 0;
       const rows = d.items.map(i => {
         const st = i.status || 'pending';
-        return `<tr>
-          <td>${i.title||'---'}</td>
+        const isSeries = i.media_type === 'series' && Array.isArray(i.seasons);
+        const detailId = isSeries ? `req-series-detail-${detailSeq++}` : null;
+        const titleCell = isSeries
+          ? `<a href="#" onclick="const el=document.getElementById('${detailId}'); el.style.display = el.style.display==='none' ? '' : 'none'; return false;">▸ ${i.title||'---'}</a>`
+          : (i.title||'---');
+        const deleteCell = isSeries ? '' : `
+            <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)"
+                    onclick="deleteRequest(${i.id}, '${(i.title||'').replace(/'/g,"\\'")}')">Delete</button>`;
+        let html = `<tr>
+          <td>${titleCell}</td>
           <td class="mono" style="font-size:11px">${i.imdb_id||'---'}</td>
           <td class="dim">${i.media_type||'---'}</td>
           <td style="${statusCls[st]||''};font-weight:600;text-transform:capitalize">${st.replace('_',' ')}</td>
           <td class="dim">${(i.created_at||'').slice(0,16)}</td>
-          <td>
-            <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)"
-                    onclick="deleteRequest(${i.id}, '${(i.title||'').replace(/'/g,"\\'")}')">Delete</button>
-          </td>
+          <td>${deleteCell}</td>
         </tr>`;
+        if (isSeries) {
+          const seasonHtml = (i.seasons.length ? i.seasons : []).map(s => {
+            const epHtml = s.episodes.map(e =>
+              `<span style="${statusCls[e.status]||''};margin-right:8px">S${String(s.season).padStart(2,'0')}E${String(e.episode).padStart(2,'0')}: ${e.status}</span>`
+            ).join('');
+            return `<div style="margin:4px 0"><b style="${statusCls[s.status]||''}">Season ${s.season} (${s.status})</b><br>${epHtml || '<span class="dim">no episodes tracked yet</span>'}</div>`;
+          }).join('') || '<span class="dim">No season data yet</span>';
+          html += `<tr id="${detailId}" style="display:none"><td colspan="6" style="font-size:11px;background:rgba(127,127,127,.08)">${seasonHtml}</td></tr>`;
+        }
+        return html;
       });
       if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No requests</td></tr>'; return; }
       _paginationState['requests-table'] = _paginationState['requests-table'] || { page: 1, size: 25 };
