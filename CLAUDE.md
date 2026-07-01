@@ -167,6 +167,9 @@ ssh corveck@10.0.0.10 "cd /volume1/docker/plex && docker compose up -d"
 | `monitor.py` | Achtergrondtaken: series sync, Seerr sync |
 | `upgrader.py` | Auto-upgrade kwaliteit, season-pack consolidatie |
 | `torrentio.py` | Scraper + kwaliteitsfilters |
+| `zilean.py` | Zoekt in de native hash-index (zilean_index.py), levert TorrentioStream resultaten |
+| `zilean_index.py` | Ingebouwde DMM hash-index: download + LZString-decode + SQLite (vervangt externe zilean-container) |
+| `lz_string.py` | Kale LZString-decoder (alleen decompress), gebruikt door zilean_index.py |
 | `torbox.py` | TorBox API client, rate-limit bewaking |
 | `db.py` | Alle SQLite toegang |
 | `config.py` | Env vars met defaults (read-only op startup) |
@@ -264,7 +267,7 @@ Tests zijn schaars; focus op integratiecorrectheid.
 | `CATBOX_HOST` | *(verplicht bij catbox)* | Extern bereikbare URL voor proxy strms |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY` | | |
 | `TMDB_API_KEY` | | Discover UI + metadata |
-| `ZILEAN_URL` | | Optionele lokale scraper |
+| `ZILEAN_ENABLED` | `false` | Ingebouwde DMM hash-index, geen losse container meer nodig |
 | `AUTH_SESSION_SECRET` | `mycelium-please-change-me` | Wijzigen in productie |
 | `SPORE_ENABLED` | `false` | Plex stub MKV + spore-stream proxy |
 | `SPORE_MEDIA_PATH` | `/data/plex-media` | Pad voor stub MKVs en .fsh cache |

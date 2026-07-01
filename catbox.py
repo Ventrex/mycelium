@@ -678,7 +678,7 @@ def _search_best_cached_release(item: dict) -> tuple[str, str] | None | object:
         def _fetch_zilean():
             if not _settings.get("ZILEAN_ENABLED", False):
                 return []
-            return _zilean.fetch_streams(imdb_id, season=season, episode=episode)
+            return _zilean.fetch_streams(imdb_id, title=item.get("title"), season=season, episode=episode)
 
         def _fetch_torrentio():
             return torrentio.fetch_streams(

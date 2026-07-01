@@ -1,56 +1,44 @@
 import logging
 
-import requests
-
-from config import ZILEAN_URL
-from torrentio import TorrentioStream, _looks_like_season_pack
+from torrentio import TorrentioStream, _looks_like_season_pack, _QUALITY_PATTERNS
+import zilean_index
 
 log = logging.getLogger(__name__)
 
 _BYTES_PER_GB = 1024 ** 3
 
-# Maps Zilean quality field to the token that rank_streams() regex filters recognise.
-_QUALITY_TOKEN_MAP = {
-    "WEB-DL": "WEB-DL",
-    "WEB": "WEBRip",
-    "BluRay": "BluRay",
-    "BluRay REMUX": "BluRay Remux",
-    "BRRip": "BRRip",
-    "DVDRip": "DVDRip",
-    "HDTV": "HDTV",
-    "CAM": "CAM",
-    "TS": "TS",
-}
+
+def _resolve_title(imdb_id: str) -> str | None:
+    """Titles are almost always already known locally (every caller has
+    already registered a request or monitored series for this imdb_id
+    before searching), so this only reaches TMDB on a cold cache miss."""
+    import db
+    req = db.get_request_by_imdb(imdb_id)
+    if req and req.get("title"):
+        return req["title"]
+    series = db.get_monitored_series_by_imdb(imdb_id)
+    if series and series.get("title"):
+        return series["title"]
+    import tmdb
+    return tmdb.resolve_title(imdb_id)
 
 
-def _to_stream(raw: dict, season: int | None) -> TorrentioStream | None:
-    info_hash = raw.get("info_hash") or ""
-    if not info_hash:
-        return None
+def _classify_quality(raw_title: str) -> str:
+    for label, pattern in _QUALITY_PATTERNS.items():
+        if pattern.search(raw_title):
+            return label
+    return "unknown"
 
-    raw_title = raw.get("raw_title", "") or ""
-    resolution = (raw.get("resolution") or "unknown").lower()
-    # Normalise to the labels used in QUALITY_PREFERENCE / _QUALITY_PATTERNS.
-    quality = resolution if resolution in ("2160p", "1080p", "720p", "480p") else "unknown"
 
-    zilean_quality = raw.get("quality") or ""
-    # Embed the quality token in name so WEBDL_RE / REMUX_RE / CAM_RE etc. fire correctly.
-    source_token = _QUALITY_TOKEN_MAP.get(zilean_quality, zilean_quality)
-    name = f"{raw_title} {source_token}".strip()
-
-    size_str = raw.get("size") or "0"
-    try:
-        size_gb = round(int(size_str) / _BYTES_PER_GB, 2)
-    except (ValueError, TypeError):
-        size_gb = 0.0
-
+def _to_stream(entry: dict, season: int | None) -> TorrentioStream:
+    raw_title = entry["raw_title"]
     return TorrentioStream(
-        name=name,
+        name=raw_title,
         title=raw_title,
-        info_hash=info_hash.lower(),
-        quality=quality,
+        info_hash=entry["info_hash"],
+        quality=_classify_quality(raw_title),
         seeders=0,
-        size_gb=size_gb,
+        size_gb=round(entry.get("size_bytes", 0) / _BYTES_PER_GB, 2),
         is_season_pack=_looks_like_season_pack(raw_title, season),
         source="zilean",
     )
@@ -58,24 +46,18 @@ def _to_stream(raw: dict, season: int | None) -> TorrentioStream | None:
 
 def fetch_streams(
     imdb_id: str,
+    title: str | None = None,
     season: int | None = None,
     episode: int | None = None,
-    timeout: int = 10,
 ) -> list[TorrentioStream]:
-    params: dict[str, object] = {"ImdbId": imdb_id}
-    if season is not None:
-        params["Season"] = season
-    if episode is not None:
-        params["Episode"] = episode
-    url = f"{ZILEAN_URL.rstrip('/')}/dmm/filtered"
-    log.info("Querying Zilean: %s params=%s", url, params)
-    try:
-        resp = requests.get(url, params=params, timeout=timeout)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        log.warning("Zilean unavailable: %s", exc)
+    """Search the native DMM hash index (see zilean_index.py). `title` can be
+    passed explicitly by callers that already have it; otherwise it's
+    resolved from the local requests/monitored_series tables (or TMDB)."""
+    resolved_title = title or _resolve_title(imdb_id)
+    if not resolved_title:
+        log.debug("Zilean: no title known for %s, skipping search", imdb_id)
         return []
-    raw_list = resp.json() or []
-    parsed = [s for s in (_to_stream(r, season) for r in raw_list) if s is not None]
-    log.info("Zilean returned %d results (%d parsed)", len(raw_list), len(parsed))
-    return parsed
+    entries = zilean_index.search(resolved_title, season=season, episode=episode)
+    streams = [_to_stream(e, season) for e in entries]
+    log.info("Zilean (native index) returned %d result(s) for %r", len(streams), resolved_title)
+    return streams

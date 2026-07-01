@@ -44,7 +44,7 @@ def _fetch_movie_candidates(req: MediaRequest) -> list:
     streams: list[TorrentioStream] = []
     seen_hashes: set[str] = set()
     if _settings.get("ZILEAN_ENABLED", False) and health_cache.is_up("zilean"):
-        for s in zilean.fetch_streams(req.imdb_id):
+        for s in zilean.fetch_streams(req.imdb_id, title=req.title):
             if s.info_hash not in seen_hashes:
                 seen_hashes.add(s.info_hash)
                 streams.append(s)
@@ -63,7 +63,7 @@ def _fetch_season_candidates(req: MediaRequest, season: int, episode: int, prefe
     streams: list[TorrentioStream] = []
     seen_hashes: set[str] = set()
     if _settings.get("ZILEAN_ENABLED", False) and health_cache.is_up("zilean"):
-        for s in zilean.fetch_streams(req.imdb_id, season=season, episode=episode):
+        for s in zilean.fetch_streams(req.imdb_id, title=req.title, season=season, episode=episode):
             if s.info_hash not in seen_hashes:
                 seen_hashes.add(s.info_hash)
                 streams.append(s)

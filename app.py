@@ -37,6 +37,7 @@ import trending
 import upgrader
 import watchdog
 import zilean
+import zilean_index
 from config import (
     AUTO_UPGRADE_ENABLED,
     AUTO_UPGRADE_INTERVAL_HOURS,
@@ -62,6 +63,7 @@ from config import (
     TRENDING_CHECK_INTERVAL_HOURS,
     TRENDING_PRECACHE_COUNT,
     WEBHOOK_SECRET,
+    ZILEAN_SYNC_INTERVAL_HOURS,
     configure_logging,
 )
 from webhook_parser import IgnoreEvent, MediaRequest, WebhookError, parse, resolve_display_title
@@ -375,6 +377,20 @@ def _start_scheduler() -> BackgroundScheduler:
             id="db_backup", next_run_time=None,
         )
         log.info("Scheduled DB backup every %dh", BACKUP_INTERVAL_HOURS)
+
+    if cfg.ZILEAN_ENABLED and ZILEAN_SYNC_INTERVAL_HOURS > 0:
+        def _run_zilean_sync():
+            threading.Thread(target=zilean_index.sync, name="zilean-sync", daemon=True).start()
+
+        scheduler.add_job(
+            _run_zilean_sync,
+            trigger="interval", hours=ZILEAN_SYNC_INTERVAL_HOURS,
+            id="zilean_sync", next_run_time=None,
+        )
+        log.info("Scheduled Zilean hash index sync every %dh", ZILEAN_SYNC_INTERVAL_HOURS)
+        # Kick off the initial backfill in the background right away instead
+        # of waiting a full interval for the first sync (index starts empty).
+        threading.Thread(target=zilean_index.sync, name="zilean-sync-initial", daemon=True).start()
 
     if RETRY_QUEUE_INTERVAL_MINUTES > 0:
         scheduler.add_job(
@@ -869,11 +885,15 @@ def setup_test(kind: str):
             return jsonify(ok=r.status_code < 400, detail=f"HTTP {r.status_code}")
 
         if kind == "zilean":
-            url = (f.get("ZILEAN_URL") or "").rstrip("/")
-            if not url:
-                return jsonify(ok=False, error="URL empty")
-            r = __import__("requests").get(f"{url}/healthcheck", timeout=6)
-            return jsonify(ok=r.status_code < 400, detail=f"HTTP {r.status_code}")
+            state = zilean_index.get_status()
+            if state["syncing"]:
+                return jsonify(ok=True, detail="Sync running in the background")
+            if state["total_hashes"] > 0:
+                return jsonify(ok=True, detail=f"{state['total_hashes']} hashes indexed "
+                                                f"(last sync: {state['last_synced_at'] or 'never'})")
+            if state["last_status"] == "error":
+                return jsonify(ok=False, error=state["last_error"] or "sync failed")
+            return jsonify(ok=True, detail="Enabled, initial sync pending")
 
         if kind == "radarr":
             url = (f.get("RADARR_URL") or "").rstrip("/")
@@ -1228,14 +1248,15 @@ def ui_api_search_candidates():
     if not re.fullmatch(r"tt\d{6,10}", imdb_id):
         return jsonify(error="invalid imdb id"), 400
 
+    zilean_enabled = _settings_mod.get("ZILEAN_ENABLED", False)
     if media_type == "movie":
-        streams = zilean.fetch_streams(imdb_id) if cfg.ZILEAN_ENABLED else []
+        streams = zilean.fetch_streams(imdb_id) if zilean_enabled else []
         candidates = torrentio.rank_streams(streams)
         if not candidates:
             streams = torrentio.fetch_streams("movie", imdb_id)
             candidates = torrentio.rank_streams(streams)
     else:
-        streams = zilean.fetch_streams(imdb_id, season=season, episode=episode) if cfg.ZILEAN_ENABLED else []
+        streams = zilean.fetch_streams(imdb_id, season=season, episode=episode) if zilean_enabled else []
         candidates = torrentio.rank_streams(streams)
         if not candidates:
             streams = torrentio.fetch_streams("series", imdb_id, season=season, episode=episode)
@@ -1611,6 +1632,21 @@ def ui_api_integrity():
     """Read-only data-integrity scan: surfaces empty/malformed imdb_id,
     missing hashes, duplicate content and orphan playability rows."""
     return jsonify(db.integrity_report())
+
+
+@app.get("/ui/api/zilean-status")
+def ui_api_zilean_status():
+    status = zilean_index.get_status()
+    status["enabled"] = _settings_mod.get("ZILEAN_ENABLED", False)
+    return jsonify(status)
+
+
+@app.post("/ui/zilean-sync-now")
+def ui_zilean_sync_now():
+    threading.Thread(target=zilean_index.sync, kwargs={"force": True},
+                      name="zilean-sync-manual", daemon=True).start()
+    flash("Zilean hash index sync started", "ok")
+    return redirect(url_for("ui_dashboard"))
 
 
 @app.post("/ui/catbox-gc")

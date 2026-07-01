@@ -8,8 +8,6 @@ from config import (
     TMDB_API_KEY,
     TORBOX_BASE_URL,
     TORRENTIO_BASE_URL,
-    ZILEAN_ENABLED,
-    ZILEAN_URL,
 )
 
 log = logging.getLogger(__name__)
@@ -36,8 +34,17 @@ def check_all() -> list[dict]:
         f"{TORBOX_BASE_URL.rstrip('/')}/torrents/mylist",
         headers={"Authorization": f"Bearer {settings.get('TORBOX_API_KEY', '')}"},
     ))
-    if ZILEAN_ENABLED:
-        services.append(_ping("Zilean", f"{ZILEAN_URL.rstrip('/')}/healthz"))
+    if settings.get("ZILEAN_ENABLED", False):
+        import zilean_index
+        zstate = zilean_index.get_status()
+        if zstate["syncing"]:
+            services.append({"name": "Zilean", "status": "syncing", "detail": f"{zstate['total_hashes']} hashes indexed"})
+        elif zstate["total_hashes"] > 0:
+            services.append({"name": "Zilean", "status": "ok", "detail": f"{zstate['total_hashes']} hashes indexed"})
+        elif zstate["last_status"] == "error":
+            services.append({"name": "Zilean", "status": "down", "error": zstate["last_error"]})
+        else:
+            services.append({"name": "Zilean", "status": "syncing", "detail": "initial sync pending"})
     else:
         services.append({"name": "Zilean", "status": "disabled"})
     services.append(_ping("Torrentio", f"{TORRENTIO_BASE_URL.rstrip('/')}/manifest.json"))

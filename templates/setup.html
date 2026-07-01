@@ -283,17 +283,15 @@
     <!-- Step 9: Zilean (Full only) -->
     <div class="step" data-step="9">
       <h2>Zilean</h2>
-      <p class="lede">Optional self-hosted torrent index (DMM-based). Faster than Torrentio for content in its index, no rate limits. A bundled instance ships in docker-compose.yml behind the "zilean" profile (<code>docker compose --profile zilean up -d</code>); use <code>http://zilean:8181</code> for that, or point at your own instance. Leave blank if you don't run one. &rarr; <a href="https://github.com/iPromKnight/zilean" target="_blank" style="color:var(--accent)">github.com/iPromKnight/zilean</a></p>
-      <div class="field">
-        <label>Zilean URL</label>
-        <input type="text" id="ZILEAN_URL" placeholder="http://zilean:8181">
-        <button type="button" class="test-btn" onclick="testConn('zilean')">Test connection</button>
-        <span id="r-zilean" class="test-result"></span>
-      </div>
+      <p class="lede">Optional built-in torrent index (DMM-based), tried before Torrentio. Runs inside Mycelium itself -- no separate container, no database to manage. On first enable it downloads and indexes the community-shared hashlists from debridmediamanager.com in the background; this can take a while the first time, then only new pages are processed on later syncs.</p>
       <label class="check-row" style="margin-top:8px">
         <input type="checkbox" id="ZILEAN_ENABLED">
-        <span><span class="t">Enable Zilean</span><br><span class="d">Automatically checked when you enter a URL above.</span></span>
+        <span><span class="t">Enable Zilean</span><br><span class="d">Faster results, no rate limits, for content already in the shared index.</span></span>
       </label>
+      <div class="field" style="margin-top:8px">
+        <button type="button" class="test-btn" onclick="testConn('zilean')">Check index status</button>
+        <span id="r-zilean" class="test-result"></span>
+      </div>
     </div>
 
     <!-- Step 10: Radarr / Sonarr (Full only) -->
@@ -415,12 +413,6 @@
     if (step === STEPS - 1) {
       finish();
       return;
-    }
-    // Auto-enable Zilean when URL is filled in
-    if (step === 9) {
-      const urlEl = document.getElementById('ZILEAN_URL');
-      const cbEl  = document.getElementById('ZILEAN_ENABLED');
-      if (urlEl && cbEl && urlEl.value.trim()) cbEl.checked = true;
     }
     step++;
     // Skip Full-only steps (7-10) when Lite mode is active

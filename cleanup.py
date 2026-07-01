@@ -117,7 +117,7 @@ def _resolve_imdb(title: str, year: int | None, media_type: str) -> str | None:
 def _fetch_candidates(imdb_id: str, title: str, media_type: str) -> list:
     if media_type == "movie":
         if _settings.get("ZILEAN_ENABLED", False):
-            streams = zilean.fetch_streams(imdb_id)
+            streams = zilean.fetch_streams(imdb_id, title=title)
             candidates = torrentio.rank_streams(streams)
             if candidates:
                 return candidates
@@ -125,7 +125,7 @@ def _fetch_candidates(imdb_id: str, title: str, media_type: str) -> list:
         return torrentio.rank_streams(streams)
     else:
         if _settings.get("ZILEAN_ENABLED", False):
-            streams = zilean.fetch_streams(imdb_id, season=1, episode=1)
+            streams = zilean.fetch_streams(imdb_id, title=title, season=1, episode=1)
             candidates = torrentio.rank_streams(streams, prefer_season_pack=True)
             if candidates:
                 return candidates
