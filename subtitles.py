@@ -31,6 +31,27 @@ _login_token: str | None = None
 _login_token_expires = 0.0
 _login_last_failure = 0.0
 
+# Circuit breaker for the API itself (rate limiting, temporary outage, or a
+# temporary block from the OpenSubtitles side after too many requests). A
+# backfill iterates every title in the library; without this, a single bad
+# stretch (their server down, or us getting rate-limited) turns into hundreds
+# of near-identical failed requests and log lines instead of backing off.
+_SERVICE_COOLDOWN_SEC = 900
+_RETRYABLE_STATUS = {403, 429, 500, 502, 503, 504}
+_service_cooldown_until = 0.0
+
+
+def _service_available() -> bool:
+    return time.time() >= _service_cooldown_until
+
+
+def _trip_circuit_breaker(status: int) -> None:
+    global _service_cooldown_until
+    if status in _RETRYABLE_STATUS and time.time() >= _service_cooldown_until:
+        _service_cooldown_until = time.time() + _SERVICE_COOLDOWN_SEC
+        log.warning("OpenSubtitles: got HTTP %d, backing off for %d minutes instead of "
+                    "hammering the rest of the library", status, _SERVICE_COOLDOWN_SEC // 60)
+
 
 def _api_key() -> str:
     return _settings.get("OPENSUBTITLES_API_KEY", "")
@@ -110,6 +131,8 @@ def _headers() -> dict:
 
 def _search(imdb_id: str | None, season: int | None, episode: int | None,
             language: str, title: str | None = None, verbose: bool = False) -> list[dict]:
+    if not _service_available():
+        return []
     params = {"languages": language}
     if imdb_id:
         # OS expects numeric imdb id (no "tt" prefix)
@@ -124,6 +147,7 @@ def _search(imdb_id: str | None, season: int | None, episode: int | None,
         params["episode_number"] = episode
     try:
         r = requests.get(f"{_BASE}/subtitles", headers=_headers(), params=params, timeout=10)
+        _trip_circuit_breaker(r.status_code)
         r.raise_for_status()
         return (r.json() or {}).get("data") or []
     except Exception as exc:
@@ -132,6 +156,8 @@ def _search(imdb_id: str | None, season: int | None, episode: int | None,
 
 
 def _request_download_url(file_id: int, _retried: bool = False) -> str | None:
+    if not _service_available():
+        return None
     try:
         r = requests.post(
             f"{_BASE}/download",
@@ -143,6 +169,7 @@ def _request_download_url(file_id: int, _retried: bool = False) -> str | None:
             # Cached token expired/invalid  -  force a fresh login and retry once.
             _login(force=True)
             return _request_download_url(file_id, _retried=True)
+        _trip_circuit_breaker(r.status_code)
         r.raise_for_status()
         return (r.json() or {}).get("link")
     except requests.exceptions.HTTPError as exc:
