@@ -139,6 +139,8 @@ HOT_RELOAD = {
     "AUDIO_LANGUAGE_PREFERENCE",
     "EXCLUDE_LANGUAGES",
     "OPENSUBTITLES_LANGUAGES",
+    "OPENSUBTITLES_API_KEY",
+    "OPENSUBTITLES_USER_AGENT",
     "BLACKLIST_FAIL_THRESHOLD",
     "WEB_PLAYER_MAX_SIZE_GB",
     "NOTIFY_ON_SUCCESS",
@@ -221,7 +223,7 @@ SETTING_GROUPS = [
         "title": "Languages & subtitles",
         "category": "quality",
         "keys": ["AUDIO_LANGUAGE_PREFERENCE", "EXCLUDE_LANGUAGES", "OPENSUBTITLES_LANGUAGES",
-                 "OPENSUBTITLES_API_KEY"],
+                 "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USER_AGENT"],
     },
     {
         "id": "auto",
