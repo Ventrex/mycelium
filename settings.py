@@ -141,6 +141,8 @@ HOT_RELOAD = {
     "OPENSUBTITLES_LANGUAGES",
     "OPENSUBTITLES_API_KEY",
     "OPENSUBTITLES_USER_AGENT",
+    "OPENSUBTITLES_USERNAME",
+    "OPENSUBTITLES_PASSWORD",
     "BLACKLIST_FAIL_THRESHOLD",
     "WEB_PLAYER_MAX_SIZE_GB",
     "NOTIFY_ON_SUCCESS",
@@ -223,7 +225,8 @@ SETTING_GROUPS = [
         "title": "Languages & subtitles",
         "category": "quality",
         "keys": ["AUDIO_LANGUAGE_PREFERENCE", "EXCLUDE_LANGUAGES", "OPENSUBTITLES_LANGUAGES",
-                 "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USER_AGENT"],
+                 "OPENSUBTITLES_API_KEY", "OPENSUBTITLES_USER_AGENT",
+                 "OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD"],
     },
     {
         "id": "auto",
@@ -325,6 +328,8 @@ SETTING_LABELS = {
     "ZILEAN_ENABLED": "Enable Zilean (built-in DMM hash index)",
     "ZILEAN_SYNC_INTERVAL_HOURS": "Zilean hash index sync interval (hours)",
     "SUBTITLE_BACKFILL_INTERVAL_HOURS": "Subtitle backfill interval (hours, 0 disables)",
+    "OPENSUBTITLES_USERNAME": "OpenSubtitles account username (optional, for VIP quota)",
+    "OPENSUBTITLES_PASSWORD": "OpenSubtitles account password (optional, for VIP quota)",
 }
 
 SETTING_CATEGORIES = [
