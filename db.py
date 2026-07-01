@@ -1136,6 +1136,12 @@ def delete_virtual_item(token: str) -> None:
         conn.commit()
 
 
+def delete_virtual_item_by_strm_path(strm_path: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM virtual_items WHERE strm_path=?", (strm_path,))
+        conn.commit()
+
+
 def rename_virtual_item_paths(old_dir: str, new_dir: str) -> int:
     """Bulk-update strm_path in virtual_items when a folder is renamed.
     Replaces the old directory prefix with the new one. Returns rows updated."""
