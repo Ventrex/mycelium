@@ -69,6 +69,7 @@ _INT_KEYS = {
     "MERGE_VERSIONS_INTERVAL_HOURS",
     "CLEANUP_INTERVAL_HOURS",
     "STRM_GENERATOR_INTERVAL_HOURS",
+    "SUBTITLE_BACKFILL_INTERVAL_HOURS",
     "ZILEAN_SYNC_INTERVAL_HOURS",
     "MONITOR_INTERVAL_HOURS",
     "MOVIE_SYNC_INTERVAL_MINUTES",
@@ -295,6 +296,7 @@ SETTING_GROUPS = [
         "category": "advanced",
         "keys": [
             "STRM_GENERATOR_INTERVAL_HOURS", "CLEANUP_INTERVAL_HOURS",
+            "SUBTITLE_BACKFILL_INTERVAL_HOURS",
             "ZILEAN_SYNC_INTERVAL_HOURS",
             "MONITOR_INTERVAL_HOURS", "MOVIE_SYNC_INTERVAL_MINUTES",
             "MERGE_VERSIONS_INTERVAL_HOURS", "BACKUP_INTERVAL_HOURS",
@@ -320,6 +322,7 @@ SETTING_LABELS = {
     "AUTO_APPROVE_FILL_COLLECTIONS": "Auto-approve: fill whole movie collections",
     "ZILEAN_ENABLED": "Enable Zilean (built-in DMM hash index)",
     "ZILEAN_SYNC_INTERVAL_HOURS": "Zilean hash index sync interval (hours)",
+    "SUBTITLE_BACKFILL_INTERVAL_HOURS": "Subtitle backfill interval (hours, 0 disables)",
 }
 
 SETTING_CATEGORIES = [

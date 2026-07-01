@@ -60,6 +60,7 @@ from config import (
     SEASON_PACK_CHECK_INTERVAL_HOURS,
     SEASON_PACK_CONSOLIDATION_ENABLED,
     STRM_GENERATOR_INTERVAL_HOURS,
+    SUBTITLE_BACKFILL_INTERVAL_HOURS,
     TRENDING_CHECK_INTERVAL_HOURS,
     TRENDING_PRECACHE_COUNT,
     WEBHOOK_SECRET,
@@ -270,7 +271,7 @@ def _configure_auto_approve_job(target_scheduler: BackgroundScheduler) -> dict:
         target_scheduler.add_job(
             auto_approve.run,
             trigger="interval", hours=1,
-            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            id=AUTO_APPROVE_JOB_ID,
             max_instances=1,
         )
         log.info("Scheduled auto-approve scan every hour")
@@ -278,7 +279,7 @@ def _configure_auto_approve_job(target_scheduler: BackgroundScheduler) -> dict:
         target_scheduler.add_job(
             auto_approve.run,
             trigger="interval", hours=values["interval_hours"],
-            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            id=AUTO_APPROVE_JOB_ID,
             max_instances=1,
         )
         log.info("Scheduled auto-approve scan every %dh", values["interval_hours"])
@@ -286,7 +287,7 @@ def _configure_auto_approve_job(target_scheduler: BackgroundScheduler) -> dict:
         target_scheduler.add_job(
             auto_approve.run,
             trigger="cron", hour=values["daily_hour"], minute=values["daily_minute"],
-            id=AUTO_APPROVE_JOB_ID, next_run_time=None,
+            id=AUTO_APPROVE_JOB_ID,
             max_instances=1,
         )
         log.info("Scheduled daily auto-approve scan at %s", values["daily_time"])
@@ -317,7 +318,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             monitor.run_series_check,
             trigger="interval", hours=MONITOR_INTERVAL_HOURS,
-            id="series_monitor", next_run_time=None,
+            id="series_monitor",
         )
         log.info("Scheduled series monitor every %dh", MONITOR_INTERVAL_HOURS)
 
@@ -326,12 +327,12 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             monitor.sync_movies,
             trigger="interval", minutes=MOVIE_SYNC_INTERVAL_MINUTES,
-            id="movie_sync", next_run_time=None,
+            id="movie_sync",
         )
         scheduler.add_job(
             monitor.sync_series,
             trigger="interval", minutes=MOVIE_SYNC_INTERVAL_MINUTES,
-            id="series_sync", next_run_time=None,
+            id="series_sync",
         )
         log.info("Scheduled Seerr movie+series sync every %dm", MOVIE_SYNC_INTERVAL_MINUTES)
     elif MOVIE_SYNC_INTERVAL_MINUTES > 0:
@@ -341,15 +342,27 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             strm_generator.run_and_refresh,
             trigger="interval", hours=STRM_GENERATOR_INTERVAL_HOURS,
-            id="strm_generator", next_run_time=None,
+            id="strm_generator",
         )
         log.info("Scheduled strm generator every %dh", STRM_GENERATOR_INTERVAL_HOURS)
+
+    if cfg.OPENSUBTITLES_API_KEY and SUBTITLE_BACKFILL_INTERVAL_HOURS > 0:
+        def _run_subtitle_backfill():
+            threading.Thread(target=strm_generator.backfill_all_subtitles,
+                              name="subtitle-backfill-scheduled", daemon=True).start()
+
+        scheduler.add_job(
+            _run_subtitle_backfill,
+            trigger="interval", hours=SUBTITLE_BACKFILL_INTERVAL_HOURS,
+            id="subtitle_backfill", max_instances=1,
+        )
+        log.info("Scheduled subtitle backfill every %dh", SUBTITLE_BACKFILL_INTERVAL_HOURS)
 
     if CLEANUP_INTERVAL_HOURS > 0:
         scheduler.add_job(
             cleanup.run_cleanup,
             trigger="interval", hours=CLEANUP_INTERVAL_HOURS,
-            id="strm_cleanup", next_run_time=None,
+            id="strm_cleanup",
         )
         log.info("Scheduled strm cleanup every %dh", CLEANUP_INTERVAL_HOURS)
 
@@ -357,7 +370,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             strm_generator.repair_expired_strms,
             trigger="interval", hours=6,
-            id="strm_repair", next_run_time=None,
+            id="strm_repair",
         )
         log.info("Scheduled automatic .strm repair every 6h")
 
@@ -365,7 +378,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             catbox.release_idle,
             trigger="interval", minutes=CATBOX_GC_INTERVAL_MINUTES,
-            id="catbox_gc", next_run_time=None,
+            id="catbox_gc",
         )
         log.info("Scheduled Catbox GC every %dm (idle threshold %dm)",
                  CATBOX_GC_INTERVAL_MINUTES, cfg.CATBOX_IDLE_MINUTES)
@@ -374,7 +387,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             backup.run,
             trigger="interval", hours=BACKUP_INTERVAL_HOURS,
-            id="db_backup", next_run_time=None,
+            id="db_backup",
         )
         log.info("Scheduled DB backup every %dh", BACKUP_INTERVAL_HOURS)
 
@@ -385,7 +398,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             _run_zilean_sync,
             trigger="interval", hours=ZILEAN_SYNC_INTERVAL_HOURS,
-            id="zilean_sync", next_run_time=None,
+            id="zilean_sync",
         )
         log.info("Scheduled Zilean hash index sync every %dh", ZILEAN_SYNC_INTERVAL_HOURS)
         # Kick off the initial backfill in the background right away instead
@@ -396,7 +409,7 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             retry_queue.run_due,
             trigger="interval", minutes=RETRY_QUEUE_INTERVAL_MINUTES,
-            id="retry_queue", next_run_time=None,
+            id="retry_queue",
         )
         log.info("Scheduled retry queue every %dm", RETRY_QUEUE_INTERVAL_MINUTES)
 
@@ -416,7 +429,6 @@ def _start_scheduler() -> BackgroundScheduler:
             _run_probe_pending,
             trigger="interval", minutes=30,
             id="probe_pending_stubs",
-            next_run_time=None,
         )
         log.info("Scheduled probe_pending_stubs every 30m")
 
@@ -425,7 +437,7 @@ def _start_scheduler() -> BackgroundScheduler:
             scheduler.add_job(
                 upgrader.run_auto_upgrade,
                 trigger="interval", hours=AUTO_UPGRADE_INTERVAL_HOURS,
-                id="auto_upgrade", next_run_time=None,
+                id="auto_upgrade",
             )
             log.info("Scheduled auto-upgrade every %dh", AUTO_UPGRADE_INTERVAL_HOURS)
 
@@ -433,7 +445,7 @@ def _start_scheduler() -> BackgroundScheduler:
             scheduler.add_job(
                 upgrader.run_pack_consolidation,
                 trigger="interval", hours=SEASON_PACK_CHECK_INTERVAL_HOURS,
-                id="pack_consolidation", next_run_time=None,
+                id="pack_consolidation",
             )
             log.info("Scheduled season-pack consolidation every %dh", SEASON_PACK_CHECK_INTERVAL_HOURS)
 
@@ -441,7 +453,7 @@ def _start_scheduler() -> BackgroundScheduler:
             scheduler.add_job(
                 upgrader.recheck_wanted,
                 trigger="interval", hours=cfg.WANTED_RECHECK_INTERVAL_HOURS,
-                id="wanted_recheck", next_run_time=None,
+                id="wanted_recheck",
             )
             log.info("Scheduled wanted-movie recheck every %dh", cfg.WANTED_RECHECK_INTERVAL_HOURS)
 
@@ -458,7 +470,7 @@ def _start_scheduler() -> BackgroundScheduler:
             scheduler.add_job(
                 trending.run,
                 trigger="interval", hours=TRENDING_CHECK_INTERVAL_HOURS,
-                id="trending_precache", next_run_time=None,
+                id="trending_precache",
             )
             log.info("Scheduled auto-add every %dh (total slots: %d)",
                      TRENDING_CHECK_INTERVAL_HOURS, _auto_add_total)
@@ -471,14 +483,14 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             _trending_auto_request_job,
             trigger="interval", hours=24,
-            id="trending_auto_request", next_run_time=None,
+            id="trending_auto_request",
         )
 
         if CONTINUE_WATCHING_INTERVAL_MINUTES > 0:
             scheduler.add_job(
                 continue_watching.prioritize_next_episodes,
                 trigger="interval", minutes=CONTINUE_WATCHING_INTERVAL_MINUTES,
-                id="continue_watching", next_run_time=None,
+                id="continue_watching",
             )
             log.info("Scheduled continue-watching priority every %dm", CONTINUE_WATCHING_INTERVAL_MINUTES)
 
@@ -486,7 +498,7 @@ def _start_scheduler() -> BackgroundScheduler:
             scheduler.add_job(
                 jellyfin.merge_duplicate_versions,
                 trigger="interval", hours=MERGE_VERSIONS_INTERVAL_HOURS,
-                id="merge_versions", next_run_time=None,
+                id="merge_versions",
             )
             log.info("Scheduled MergeVersions every %dh", MERGE_VERSIONS_INTERVAL_HOURS)
 
@@ -494,22 +506,22 @@ def _start_scheduler() -> BackgroundScheduler:
         scheduler.add_job(
             lambda: torbox.check_quota_and_warn(QUOTA_WARN_TORRENT_COUNT, QUOTA_WARN_SIZE_GB),
             trigger="interval", hours=QUOTA_CHECK_INTERVAL_HOURS,
-            id="quota_warn", next_run_time=None,
+            id="quota_warn",
         )
         log.info("Scheduled TorBox quota check every %dh", QUOTA_CHECK_INTERVAL_HOURS)
 
     # Watchdogs + maintenance
     scheduler.add_job(watchdog.deadman_check, trigger="interval", hours=2,
-                       id="deadman", next_run_time=None, max_instances=1)
+                       id="deadman", max_instances=1)
     scheduler.add_job(watchdog.disk_check, trigger="interval", hours=1,
-                       id="disk_check", next_run_time=None, max_instances=1)
+                       id="disk_check", max_instances=1)
     # Aggressive pruning so volatile tables don't grow unbounded between scrapes.
     scheduler.add_job(lambda: db.prune_old(14), trigger="interval", hours=6,
-                       id="prune_old", next_run_time=None, max_instances=1)
+                       id="prune_old", max_instances=1)
     scheduler.add_job(lambda: db.prune_webhook_events(24), trigger="interval", hours=6,
-                       id="prune_webhooks", next_run_time=None, max_instances=1)
+                       id="prune_webhooks", max_instances=1)
     scheduler.add_job(db.vacuum, trigger="interval", hours=24 * 7,
-                       id="vacuum", next_run_time=None, max_instances=1)
+                       id="vacuum", max_instances=1)
     log.info("Scheduled watchdogs: deadman/2h, disk/1h, prune/24h, vacuum/weekly")
 
     # Apply max_instances=1 to all overlap-sensitive jobs already added
