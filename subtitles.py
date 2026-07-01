@@ -6,6 +6,8 @@ downloads/day per API key, paid tier higher. Skips silently if not configured.
 API docs: https://opensubtitles.stoplight.io/docs/opensubtitles-api/
 """
 import logging
+import threading
+import time
 from pathlib import Path
 
 import requests
@@ -14,6 +16,14 @@ import settings as _settings
 
 log = logging.getLogger(__name__)
 _BASE = "https://api.opensubtitles.com/api/v1"
+
+# OpenSubtitles JWT tokens are valid ~24h. Login is optional (username/password);
+# without it, requests use the anonymous quota (5 downloads/day) regardless of
+# the account's real tier. Cached across calls, re-fetched near expiry or on 401.
+_LOGIN_TOKEN_TTL_SEC = 23 * 3600
+_login_lock = threading.Lock()
+_login_token: str | None = None
+_login_token_expires = 0.0
 
 
 def _api_key() -> str:
@@ -24,6 +34,10 @@ def _user_agent() -> str:
     return _settings.get("OPENSUBTITLES_USER_AGENT", "Mycelium v1.0")
 
 
+def _credentials() -> tuple[str, str]:
+    return (_settings.get("OPENSUBTITLES_USERNAME", ""), _settings.get("OPENSUBTITLES_PASSWORD", ""))
+
+
 def _languages() -> list[str]:
     raw = _settings.get("OPENSUBTITLES_LANGUAGES", "")
     if isinstance(raw, list):
@@ -31,13 +45,55 @@ def _languages() -> list[str]:
     return [l.strip().lower() for l in (raw or "").split(",") if l.strip()]
 
 
-def _headers() -> dict:
+def _base_headers() -> dict:
     return {
         "Api-Key": _api_key(),
         "User-Agent": _user_agent(),
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+
+
+def _login(force: bool = False) -> str | None:
+    """Log in with the configured account to get the real (e.g. VIP) download
+    quota instead of the anonymous 5/day. Returns the bearer token, or None if
+    no credentials are configured or login fails (caller falls back to
+    anonymous requests)."""
+    global _login_token, _login_token_expires
+    username, password = _credentials()
+    if not username or not password:
+        return None
+    with _login_lock:
+        if not force and _login_token and time.time() < _login_token_expires:
+            return _login_token
+        try:
+            r = requests.post(
+                f"{_BASE}/login",
+                headers=_base_headers(),
+                json={"username": username, "password": password},
+                timeout=10,
+            )
+            r.raise_for_status()
+            token = (r.json() or {}).get("token")
+            if not token:
+                log.warning("OpenSubtitles login: no token in response")
+                return None
+            _login_token = token
+            _login_token_expires = time.time() + _LOGIN_TOKEN_TTL_SEC
+            log.info("OpenSubtitles: logged in as %s", username)
+            return token
+        except Exception as exc:
+            log.warning("OpenSubtitles login failed: %s", exc)
+            _login_token = None
+            return None
+
+
+def _headers() -> dict:
+    headers = _base_headers()
+    token = _login()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _search(imdb_id: str | None, season: int | None, episode: int | None,
@@ -63,7 +119,7 @@ def _search(imdb_id: str | None, season: int | None, episode: int | None,
         return []
 
 
-def _request_download_url(file_id: int) -> str | None:
+def _request_download_url(file_id: int, _retried: bool = False) -> str | None:
     try:
         r = requests.post(
             f"{_BASE}/download",
@@ -71,6 +127,10 @@ def _request_download_url(file_id: int) -> str | None:
             json={"file_id": file_id},
             timeout=10,
         )
+        if r.status_code == 401 and not _retried and _credentials()[0]:
+            # Cached token expired/invalid  -  force a fresh login and retry once.
+            _login(force=True)
+            return _request_download_url(file_id, _retried=True)
         r.raise_for_status()
         return (r.json() or {}).get("link")
     except requests.exceptions.HTTPError as exc:
