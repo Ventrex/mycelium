@@ -508,7 +508,7 @@
     <div class="table-wrap">
       <table id="requests-table">
         <thead><tr>
-          <th class="sortable">Title</th><th>IMDB</th><th>Type</th>
+          <th class="sortable">Title</th><th>IMDB</th><th class="sortable">Type</th>
           <th class="sortable">Status</th><th class="sortable">Added</th><th></th>
         </tr></thead>
         <tbody id="requests-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
@@ -949,6 +949,15 @@
         state._rows = filtered;
         state.page = 1;
         paginateTable(tableId, filtered, state.size);
+        // A query like "S02E05" only matches inside a series' collapsed
+        // season/episode detail, not its visible row  -  auto-expand any
+        // match so the result is actually visible instead of just a title.
+        if (q) {
+          const tbl = document.getElementById(tableId);
+          tbl?.querySelectorAll('tr[data-detail-row="true"]').forEach(detail => {
+            if (detail.textContent.toLowerCase().includes(q)) detail.style.display = '';
+          });
+        }
       } else {
         const tbl = document.getElementById(tableId);
         if (!tbl) return;
@@ -969,7 +978,11 @@
   });
   function sortTable(tbl, colIdx, th) {
     const tbody = tbl.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.querySelector('.empty'));
+    // Some rows (e.g. an expanded series' season/episode breakdown) are a
+    // separate hidden <tr> that must stay directly after its parent row,
+    // not get sorted independently  -  reattach those after sorting.
+    const rows = Array.from(tbody.querySelectorAll('tr'))
+      .filter(r => !r.querySelector('.empty') && r.dataset.detailRow !== 'true');
     const asc = !th.classList.contains('sort-asc');
     tbl.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
     th.classList.add(asc ? 'sort-asc' : 'sort-desc');
@@ -980,7 +993,14 @@
       if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
       return asc ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-    rows.forEach(r => tbody.appendChild(r));
+    rows.forEach(r => {
+      tbody.appendChild(r);
+      const detailId = r.dataset.detailTarget;
+      if (detailId) {
+        const detail = tbody.querySelector('#' + CSS.escape(detailId));
+        if (detail) tbody.appendChild(detail);
+      }
+    });
   }
 
   // ── Posters (lazy via TMDB) ──
@@ -1515,7 +1535,7 @@
         const deleteCell = isSeries ? '' : `
             <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)"
                     onclick="deleteRequest(${i.id}, '${(i.title||'').replace(/'/g,"\\'")}')">Delete</button>`;
-        let html = `<tr>
+        let html = `<tr${detailId ? ` data-detail-target="${detailId}"` : ''}>
           <td>${titleCell}</td>
           <td class="mono" style="font-size:11px">${i.imdb_id||'---'}</td>
           <td class="dim">${i.media_type||'---'}</td>
@@ -1530,7 +1550,7 @@
             ).join('');
             return `<div style="margin:4px 0"><b style="${statusCls[s.status]||''}">Season ${s.season} (${s.status})</b><br>${epHtml || '<span class="dim">no episodes tracked yet</span>'}</div>`;
           }).join('') || '<span class="dim">No season data yet</span>';
-          html += `<tr id="${detailId}" style="display:none"><td colspan="6" style="font-size:11px;background:rgba(127,127,127,.08)">${seasonHtml}</td></tr>`;
+          html += `<tr id="${detailId}" data-detail-row="true" style="display:none"><td colspan="6" style="font-size:11px;background:rgba(127,127,127,.08)">${seasonHtml}</td></tr>`;
         }
         return html;
       });
