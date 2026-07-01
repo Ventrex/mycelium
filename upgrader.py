@@ -66,24 +66,44 @@ def _current_languages(stored: str | None, candidates: list, current_hash: str) 
     return match.languages if match else ()
 
 
+def _movie_runtime_override(imdb_id: str) -> dict:
+    import tmdb
+    try:
+        sec = tmdb.get_movie_runtime_sec(imdb_id)
+        return {"runtime_minutes": sec / 60.0 if sec else None}
+    except Exception:
+        return {}
+
+
+def _episode_runtime_override(imdb_id: str, season: int, episode: int = 1) -> dict:
+    import tmdb
+    try:
+        sec = tmdb.get_episode_runtime_sec(imdb_id, season, episode)
+        return {"runtime_minutes": sec / 60.0 if sec else None}
+    except Exception:
+        return {}
+
+
 def _fetch_movie_candidates(imdb_id: str, title: str | None = None) -> list:
+    override = _movie_runtime_override(imdb_id)
     if _settings.get("ZILEAN_ENABLED", False):
         streams = zilean.fetch_streams(imdb_id, title=title)
-        candidates = torrentio.rank_streams(streams)
+        candidates = torrentio.rank_streams(streams, override=override)
         if candidates:
             return candidates
     streams = torrentio.fetch_streams("movie", imdb_id)
-    return torrentio.rank_streams(streams)
+    return torrentio.rank_streams(streams, override=override)
 
 
 def _fetch_season_candidates(imdb_id: str, season: int, title: str | None = None) -> list:
+    override = _episode_runtime_override(imdb_id, season)
     if _settings.get("ZILEAN_ENABLED", False):
         streams = zilean.fetch_streams(imdb_id, title=title, season=season, episode=1)
-        candidates = torrentio.rank_streams(streams, prefer_season_pack=True)
+        candidates = torrentio.rank_streams(streams, prefer_season_pack=True, override=override)
         if candidates:
             return candidates
     streams = torrentio.fetch_streams("series", imdb_id, season=season, episode=1)
-    return torrentio.rank_streams(streams, prefer_season_pack=True)
+    return torrentio.rank_streams(streams, prefer_season_pack=True, override=override)
 
 
 def _better_cached(candidates: list, current_quality: str, current_hash: str,
