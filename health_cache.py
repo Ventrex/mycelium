@@ -13,7 +13,6 @@ import settings as _settings
 from config import (
     HEALTH_CACHE_SECONDS,
     TORRENTIO_BASE_URL,
-    ZILEAN_URL,
 )
 
 log = logging.getLogger(__name__)
@@ -25,10 +24,10 @@ _cache: dict[str, tuple[bool, float]] = {}
 def _probe(name: str) -> bool:
     try:
         if name == "zilean":
-            if not ZILEAN_URL:
-                return False
-            r = requests.get(f"{ZILEAN_URL.rstrip('/')}/healthz", timeout=3)
-            return r.status_code < 500
+            # Native index: an in-process SQLite read, not a network call.
+            # "up" once it has synced at least one hash into the index.
+            import zilean_index
+            return zilean_index.get_status()["total_hashes"] > 0
         if name == "torrentio":
             r = requests.get(f"{TORRENTIO_BASE_URL.rstrip('/')}/manifest.json", timeout=3)
             return r.status_code < 500
@@ -39,7 +38,7 @@ def _probe(name: str) -> bool:
 
 
 def is_up(name: str) -> bool:
-    if name == "zilean" and (not _settings.get("ZILEAN_ENABLED", False) or not ZILEAN_URL):
+    if name == "zilean" and not _settings.get("ZILEAN_ENABLED", False):
         return False
     now = time.monotonic()
     with _lock:

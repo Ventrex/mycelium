@@ -66,9 +66,9 @@ def _current_languages(stored: str | None, candidates: list, current_hash: str) 
     return match.languages if match else ()
 
 
-def _fetch_movie_candidates(imdb_id: str) -> list:
+def _fetch_movie_candidates(imdb_id: str, title: str | None = None) -> list:
     if _settings.get("ZILEAN_ENABLED", False):
-        streams = zilean.fetch_streams(imdb_id)
+        streams = zilean.fetch_streams(imdb_id, title=title)
         candidates = torrentio.rank_streams(streams)
         if candidates:
             return candidates
@@ -76,9 +76,9 @@ def _fetch_movie_candidates(imdb_id: str) -> list:
     return torrentio.rank_streams(streams)
 
 
-def _fetch_season_candidates(imdb_id: str, season: int) -> list:
+def _fetch_season_candidates(imdb_id: str, season: int, title: str | None = None) -> list:
     if _settings.get("ZILEAN_ENABLED", False):
-        streams = zilean.fetch_streams(imdb_id, season=season, episode=1)
+        streams = zilean.fetch_streams(imdb_id, title=title, season=season, episode=1)
         candidates = torrentio.rank_streams(streams, prefer_season_pack=True)
         if candidates:
             return candidates
@@ -120,7 +120,7 @@ def _run_auto_upgrade_catbox() -> int:
     log.info("Auto-upgrade (catbox): checking %d upgradeable virtual item(s)", len(items))
     for item in items:
         try:
-            candidates = _fetch_movie_candidates(item["imdb_id"])
+            candidates = _fetch_movie_candidates(item["imdb_id"], title=item["title"])
             if not candidates:
                 continue
             hashes = [c.info_hash for c in candidates[:20]]
@@ -175,7 +175,7 @@ def run_auto_upgrade() -> int:
         if _quality_score(row.get("quality")) >= _QUALITY_RANK["2160p"]:
             continue
         try:
-            candidates = _fetch_movie_candidates(row["imdb_id"])
+            candidates = _fetch_movie_candidates(row["imdb_id"], title=row["title"])
             current_languages = _current_languages(row.get("languages"), candidates, row["info_hash"] or "")
             better = _better_cached(candidates, row.get("quality") or "?", row["info_hash"] or "",
                                     current_languages)
@@ -239,7 +239,7 @@ def run_pack_consolidation() -> int:
         if not imdb_id:
             continue
         try:
-            candidates = _fetch_season_candidates(imdb_id, season)
+            candidates = _fetch_season_candidates(imdb_id, season, title=title)
             packs = [c for c in candidates if getattr(c, "is_season_pack", False)]
             if not packs:
                 continue

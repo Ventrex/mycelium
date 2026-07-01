@@ -69,6 +69,7 @@ _INT_KEYS = {
     "MERGE_VERSIONS_INTERVAL_HOURS",
     "CLEANUP_INTERVAL_HOURS",
     "STRM_GENERATOR_INTERVAL_HOURS",
+    "ZILEAN_SYNC_INTERVAL_HOURS",
     "MONITOR_INTERVAL_HOURS",
     "MOVIE_SYNC_INTERVAL_MINUTES",
     "MAX_RETRY_ATTEMPTS",
@@ -120,7 +121,6 @@ HOT_RELOAD = {
     "SEERR_URL",
     "SEERR_API_KEY",
     "TMDB_API_KEY",
-    "ZILEAN_URL",
     "ZILEAN_ENABLED",
     "CATBOX_MODE",
     "CATBOX_LAZY_ADD",
@@ -195,7 +195,7 @@ SETTING_GROUPS = [
             "TMDB_API_KEY",
             "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
             "TRAKT_AUTO_REQUEST", "TRAKT_AUTO_REQUEST_LIMIT",
-            "ZILEAN_ENABLED", "ZILEAN_URL",
+            "ZILEAN_ENABLED",
             "REALDEBRID_API_KEY", "MULTI_DEBRID_ENABLED",
         ],
     },
@@ -295,6 +295,7 @@ SETTING_GROUPS = [
         "category": "advanced",
         "keys": [
             "STRM_GENERATOR_INTERVAL_HOURS", "CLEANUP_INTERVAL_HOURS",
+            "ZILEAN_SYNC_INTERVAL_HOURS",
             "MONITOR_INTERVAL_HOURS", "MOVIE_SYNC_INTERVAL_MINUTES",
             "MERGE_VERSIONS_INTERVAL_HOURS", "BACKUP_INTERVAL_HOURS",
             "RETRY_QUEUE_INTERVAL_MINUTES", "CONTINUE_WATCHING_INTERVAL_MINUTES",
@@ -317,6 +318,8 @@ SETTING_LABELS = {
     "FAVORITE_ACTOR_PER_ACTOR_LIMIT": "Favorite actor: titles per actor (0 = all)",
     "FAVORITE_ACTOR_RECENCY_YEARS": "Favorite actor: max age in years (0 = all)",
     "AUTO_APPROVE_FILL_COLLECTIONS": "Auto-approve: fill whole movie collections",
+    "ZILEAN_ENABLED": "Enable Zilean (built-in DMM hash index)",
+    "ZILEAN_SYNC_INTERVAL_HOURS": "Zilean hash index sync interval (hours)",
 }
 
 SETTING_CATEGORIES = [

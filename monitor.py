@@ -256,7 +256,7 @@ def _retry_episode(ep: dict) -> bool:
     streams: list = []
     seen_hashes: set = set()
     if _settings.get("ZILEAN_ENABLED", False):
-        for s in zilean.fetch_streams(imdb_id, season=season, episode=episode):
+        for s in zilean.fetch_streams(imdb_id, title=title, season=season, episode=episode):
             if s.info_hash not in seen_hashes:
                 seen_hashes.add(s.info_hash)
                 streams.append(s)
@@ -341,7 +341,7 @@ def _search_and_add_season(imdb_id: str, title: str, seasons: list[int]) -> None
     for season in seasons:
         streams: list = []
         if _settings.get("ZILEAN_ENABLED", False):
-            streams = zilean.fetch_streams(imdb_id, season=season, episode=1)
+            streams = zilean.fetch_streams(imdb_id, title=title, season=season, episode=1)
         if not streams:
             streams = torrentio.fetch_streams("series", imdb_id, season=season, episode=1)
         candidates = torrentio.rank_streams(streams, prefer_season_pack=True)

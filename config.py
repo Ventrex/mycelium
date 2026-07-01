@@ -24,8 +24,11 @@ def _env_int(name: str, default: int) -> int:
 TORBOX_API_KEY = _env("TORBOX_API_KEY", "")
 TORBOX_BASE_URL = _env("TORBOX_BASE_URL", "https://api.torbox.app/v1/api")
 
-ZILEAN_URL = _env("ZILEAN_URL", "")
 ZILEAN_ENABLED = _env("ZILEAN_ENABLED", "false").lower() in ("1", "true", "yes")
+# Native DMM hash index (see zilean_index.py) -- own SQLite file so the
+# potentially large hash table never bloats/slows down the main DB.
+ZILEAN_DB_PATH = _env("ZILEAN_DB_PATH", "/data/zilean.db")
+ZILEAN_SYNC_INTERVAL_HOURS = _env_int("ZILEAN_SYNC_INTERVAL_HOURS", 12)
 
 TORRENTIO_BASE_URL = _env("TORRENTIO_BASE_URL", "https://torrentio.strem.fun")
 TORRENTIO_OPTS = _env("TORRENTIO_OPTS", "")

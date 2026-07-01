@@ -57,6 +57,18 @@ def find_by_imdb(imdb_id: str, kind: str = "tv") -> int | None:
     return None
 
 
+def resolve_title(imdb_id: str) -> str | None:
+    """Best-effort title lookup for an IMDb ID, checking movie then tv results."""
+    data = _get(f"/find/{imdb_id}", params={"external_source": "imdb_id"})
+    if not data:
+        return None
+    for key in ("movie_results", "tv_results"):
+        results = data.get(key) or []
+        if results:
+            return results[0].get("title") or results[0].get("name")
+    return None
+
+
 def get_show_info(tmdb_id: int) -> dict | None:
     """Return top-level show info including number_of_seasons."""
     return _get(f"/tv/{tmdb_id}")

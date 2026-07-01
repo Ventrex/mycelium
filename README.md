@@ -283,7 +283,7 @@ docker compose up -d
 Open **`http://<your-host>:8088`** - the setup wizard walks you through everything. Each step has a **Test** button. The first account you create becomes admin.
 
 **Optional add-ons** (not needed to get started):
-- [Zilean](https://github.com/iPromKnight/zilean) - self-hosted hash index, faster and private. Bundled in `docker-compose.yml` behind the `zilean` profile: `docker compose --profile zilean up -d`
+- Zilean - built-in DMM hash index, faster and private, no separate container. Enable with `ZILEAN_ENABLED=true`
 - [RealDebrid](https://real-debrid.com) - fallback debrid when TorBox misses
 - [Jellyseerr](https://jellyseerr.dev) / [Overseerr](https://overseerr.dev) - request portal via webhook
 - [OpenSubtitles](https://www.opensubtitles.com/en/consumers) - auto subtitle download
@@ -471,7 +471,8 @@ If you use Mycelium or build on top of it, a mention or link back to [github.com
 
 - [elfhosted](https://elfhosted.com) for the CatBox concept that inspired the lazy-materialize mode
 - [TorBox](https://torbox.app) for being a solid debrid service
-- [Jellyfin](https://jellyfin.org), [Jellyseerr](https://jellyseerr.dev), [Zilean](https://github.com/iPromKnight/zilean), [Torrentio](https://torrentio.strem.fun) for the ecosystem
+- [Jellyfin](https://jellyfin.org), [Jellyseerr](https://jellyseerr.dev), [Torrentio](https://torrentio.strem.fun) for the ecosystem
+- [DebridMediaManager](https://debridmediamanager.com) for the community-shared hashlists the built-in Zilean index is built from
 
 ---
 
