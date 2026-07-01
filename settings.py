@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 # Type hints per key  -  drives parsing of stored strings.
 _BOOL_KEYS = {
+    "EXCLUDE_UNDERSIZED_RELEASES",
     "CATBOX_MODE",
     "CATBOX_PRELOAD",
     "ALLOW_4K",
@@ -132,6 +133,7 @@ HOT_RELOAD = {
     "EXCLUDE_BLURAY",
     "EXCLUDE_CAM",
     "STRICT_NO_CAM",
+    "EXCLUDE_UNDERSIZED_RELEASES",
     "PREFER_WEBDL",
     "PREFER_HEVC",
     "MIN_SEEDERS",
@@ -217,6 +219,7 @@ SETTING_GROUPS = [
         "keys": [
             "QUALITY_PREFERENCE", "ALLOW_4K", "EXCLUDE_REMUX", "EXCLUDE_BLURAY", "EXCLUDE_CAM",
             "PREFER_WEBDL", "PREFER_HEVC", "MIN_SEEDERS", "MAX_SIZE_GB", "STRICT_NO_CAM",
+            "EXCLUDE_UNDERSIZED_RELEASES",
             "WEB_PLAYER_MAX_SIZE_GB",
         ],
     },
@@ -330,6 +333,7 @@ SETTING_LABELS = {
     "SUBTITLE_BACKFILL_INTERVAL_HOURS": "Subtitle backfill interval (hours, 0 disables)",
     "OPENSUBTITLES_USERNAME": "OpenSubtitles account username (optional, for VIP quota)",
     "OPENSUBTITLES_PASSWORD": "OpenSubtitles account password (optional, for VIP quota)",
+    "EXCLUDE_UNDERSIZED_RELEASES": "Reject implausibly small releases (fake quality / cam / trailer)",
 }
 
 SETTING_CATEGORIES = [

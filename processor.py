@@ -39,8 +39,27 @@ def _rank(streams, prefer_season_pack: bool = False, override: dict | None = Non
     return torrentio.rank_streams(streams, prefer_season_pack=prefer_season_pack, override=override)
 
 
+def _movie_runtime_minutes(imdb_id: str) -> float | None:
+    import tmdb
+    try:
+        sec = tmdb.get_movie_runtime_sec(imdb_id)
+        return sec / 60.0 if sec else None
+    except Exception:
+        return None
+
+
+def _episode_runtime_minutes(imdb_id: str, season: int, episode: int) -> float | None:
+    import tmdb
+    try:
+        sec = tmdb.get_episode_runtime_sec(imdb_id, season, episode)
+        return sec / 60.0 if sec else None
+    except Exception:
+        return None
+
+
 def _fetch_movie_candidates(req: MediaRequest) -> list:
-    override = db.get_show_override(req.imdb_id)
+    override = dict(db.get_show_override(req.imdb_id) or {})
+    override["runtime_minutes"] = _movie_runtime_minutes(req.imdb_id)
     streams: list[TorrentioStream] = []
     seen_hashes: set[str] = set()
     if _settings.get("ZILEAN_ENABLED", False) and health_cache.is_up("zilean"):
@@ -59,7 +78,8 @@ def _fetch_movie_candidates(req: MediaRequest) -> list:
 
 
 def _fetch_season_candidates(req: MediaRequest, season: int, episode: int, prefer_season_pack: bool = False) -> list:
-    override = db.get_show_override(req.imdb_id)
+    override = dict(db.get_show_override(req.imdb_id) or {})
+    override["runtime_minutes"] = _episode_runtime_minutes(req.imdb_id, season, episode)
     streams: list[TorrentioStream] = []
     seen_hashes: set[str] = set()
     if _settings.get("ZILEAN_ENABLED", False) and health_cache.is_up("zilean"):
