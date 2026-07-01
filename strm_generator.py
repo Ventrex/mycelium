@@ -959,6 +959,13 @@ def create_lazy_episode_strm(info_hash: str, magnet: str, title: str,
     safe_title = _safe(title)
     if not safe_title:
         return False
+    # DB-level dedup guard: the path check below only catches the case where
+    # the .strm already lives at the exact same computed path. If the title
+    # was sanitized differently since the episode was first registered (folder
+    # rename, title fix, etc.) that check misses it and we'd register a second
+    # token for the same episode. Checking imdb_id+season+episode catches that.
+    if imdb_id and db.get_virtual_item_by_episode(imdb_id, season, episode):
+        return False
     season_dir = f"Season {season:02d}"
     ep_name = f"{safe_title} S{season:02d}E{episode:02d}"
     path = Path(MEDIA_PATH) / "series" / safe_title / season_dir / f"{ep_name}.strm"
