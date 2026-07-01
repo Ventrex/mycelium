@@ -4,11 +4,8 @@ Prioriteit: Hoog / Middel / Laag (grove inschatting, geef gerust zelf een andere
 
 ## Hoog
 
-- **Request-status database + "doorlopend ophalen zonder cap"** (idee van Ventrex, 2026-07-01): TorBox heeft geen harde opslaglimiet (gedeeld met andere gebruikers), dus Auto-Approve hoeft niet te stoppen bij een dagcap - het moet gewoon continu doorzoeken en morgen verdergaan waar het gebleven is. Voorstel: een aparte tabel/db die per item de status bijhoudt, bijvoorbeeld:
-  - `aangevraagd` → `aanwezig in TorBox` → periodieke check of de `.strm` nog werkt (elke X uur/dagen)
-  - Dit vervangt/vult de huidige `requests` + `virtual_items` tabellen aan met een expliciete voortgangsstatus per titel, zodat Auto-Approve niet steeds dezelfde TMDB-pagina's opnieuw hoeft te scannen om te bepalen wat al gedaan is.
-  - Geschatte impact: rearchitectuur van een deel van `auto_approve.py` + `db.py`, ongeveer een dag werk (niet een quick fix).
-- **Spore: aparte strm+mkv koppeling in dezelfde statustabel**: bovenstaande database kan per titel 2 locaties bijhouden (de `.strm` voor Jellyfin en de stub `.mkv` voor Plex/Spore), zodat Spore-stubs makkelijker in sync te houden zijn met de "hoofd" strm-registratie in plaats van een aparte scan (`regenerate_spore_stubs`).
+- **Auto-Approve "doorlopend ophalen zonder cap"** (idee van Ventrex, 2026-07-01): TorBox heeft geen harde opslaglimiet, dus Auto-Approve hoeft niet te stoppen bij een dagcap - het moet continu doorzoeken en morgen verdergaan waar het gebleven is. **Nog niet gedaan** - dit vereist een rearchitectuur van de scan-cursor/limiet-logica in `auto_approve.py` zelf (los van de zichtbaarheid, die inmiddels wel is opgelost, zie Bugs.md 2026-07-01 "Auto-approved series waren onzichtbaar"). Geschatte impact: ongeveer een dag werk.
+- **Spore: aparte strm+mkv koppeling per titel**: `library_status.py` (nieuw, 2026-07-01) aggregeert nu wel status over `virtual_items`, maar koppelt nog niet expliciet een Jellyfin-strm-locatie aan een Plex-stub-mkv-locatie voor hetzelfde item. Zou `regenerate_spore_stubs` als aparte scan kunnen vervangen door een directe koppeling in dezelfde view/tabel.
 
 ## Middel
 
