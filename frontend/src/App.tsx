@@ -1,11 +1,9 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Discover from './pages/Discover';
 import Search from './pages/Search';
 import Watchlist from './pages/Watchlist';
 import Library from './pages/Library';
 import Requests from './pages/Requests';
-import Wanted from './pages/Wanted';
 import Settings from './pages/Settings';
 import Shows from './pages/Shows';
 import Movies from './pages/Movies';
@@ -22,7 +20,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/profiles" element={<ProfileSelect />} />
       <Route element={<Layout />}>
-        <Route index element={<Discover />} />
+        <Route index element={<Navigate to="/movies" replace />} />
         <Route path="library" element={<Library />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="search" element={<Search />} />
@@ -33,7 +31,7 @@ export default function App() {
         <Route path="subtitles" element={<Subtitles />} />
         <Route path="logs" element={<Logs />} />
         <Route path="requests" element={<Requests />} />
-        <Route path="wanted" element={<Wanted />} />
+        <Route path="wanted" element={<Navigate to="/requests" replace />} />
         <Route path="settings" element={<Settings />} />
         <Route path="admin" element={
           <iframe src="/admin?embed=1" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />

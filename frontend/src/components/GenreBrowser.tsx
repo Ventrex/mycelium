@@ -8,11 +8,13 @@ import DetailModal from './DetailModal';
 import GenreSettingsModal from './GenreSettingsModal';
 import LanguageSettingsModal from './LanguageSettingsModal';
 import RowExpandModal from './RowExpandModal';
+import ProviderStrip from './ProviderStrip';
 
 export default function GenreBrowser({ mediaType }: { mediaType: MediaType }) {
   const [detail, setDetail] = useState<{ id: number; type: MediaType } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showLanguageSettings, setShowLanguageSettings] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<{ title: string; queryKey: unknown[]; fetchPage: (page: number) => Promise<TmdbItem[]> } | null>(null);
   const open = (item: TmdbItem) => setDetail({ id: item.tmdb_id, type: item.media_type });
 
@@ -51,50 +53,56 @@ export default function GenreBrowser({ mediaType }: { mediaType: MediaType }) {
         </div>
       </div>
 
-      <section>
-        <SectionHeader
-          title={trendingTitle}
-          action={
-            <button
-              type="button"
-              onClick={() =>
-                setExpanded({
-                  title: trendingTitle,
-                  queryKey: ['trending-all', mediaType, 'week'],
-                  fetchPage: (page) => api.trending(mediaType, 'week', page).then((r) => r.results),
-                })
-              }
-              className="text-xs text-muted hover:text-white"
-            >
-              Show all
-            </button>
-          }
-        />
-        <PosterGrid items={trending} loading={trendingLoading} onItemClick={open} />
-      </section>
+      <ProviderStrip mediaType={mediaType} onPick={setActiveProvider} onItemClick={open} />
 
-      {genresLoading ? (
-        <div className="text-muted text-sm py-6">Loading genres...</div>
-      ) : visibleGenres.length === 0 ? (
-        <div className="text-muted text-sm py-6">
-          No genres to show. Open genre settings to enable some.
-        </div>
-      ) : (
-        visibleGenres.map((g) => (
-          <GenreRow
-            key={g.id}
-            mediaType={mediaType}
-            genre={g}
-            onItemClick={open}
-            onShowAll={() =>
-              setExpanded({
-                title: g.name,
-                queryKey: ['by-genre-all', mediaType, g.id],
-                fetchPage: (page) => api.byGenre(mediaType, g.id, page).then((r) => r.results),
-              })
-            }
-          />
-        ))
+      {activeProvider === null && (
+        <>
+          <section>
+            <SectionHeader
+              title={trendingTitle}
+              action={
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded({
+                      title: trendingTitle,
+                      queryKey: ['trending-all', mediaType, 'week'],
+                      fetchPage: (page) => api.trending(mediaType, 'week', page).then((r) => r.results),
+                    })
+                  }
+                  className="text-xs text-muted hover:text-white"
+                >
+                  Show all
+                </button>
+              }
+            />
+            <PosterGrid items={trending} loading={trendingLoading} onItemClick={open} />
+          </section>
+
+          {genresLoading ? (
+            <div className="text-muted text-sm py-6">Loading genres...</div>
+          ) : visibleGenres.length === 0 ? (
+            <div className="text-muted text-sm py-6">
+              No genres to show. Open genre settings to enable some.
+            </div>
+          ) : (
+            visibleGenres.map((g) => (
+              <GenreRow
+                key={g.id}
+                mediaType={mediaType}
+                genre={g}
+                onItemClick={open}
+                onShowAll={() =>
+                  setExpanded({
+                    title: g.name,
+                    queryKey: ['by-genre-all', mediaType, g.id],
+                    fetchPage: (page) => api.byGenre(mediaType, g.id, page).then((r) => r.results),
+                  })
+                }
+              />
+            ))
+          )}
+        </>
       )}
 
       <DetailModal

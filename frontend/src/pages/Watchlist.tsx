@@ -18,7 +18,7 @@ export default function Watchlist() {
       <div className="text-center py-16">
         <div className="text-5xl mb-3">&#9733;</div>
         <h2 className="text-lg font-semibold mb-1">Your watchlist is empty</h2>
-        <p className="text-muted text-sm">Add items from the Discover page to track what you want to watch.</p>
+        <p className="text-muted text-sm">Add items from Movies, Shows or Search to track what you want to watch.</p>
       </div>
     );
   }
