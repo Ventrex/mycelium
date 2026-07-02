@@ -509,9 +509,9 @@
       <table id="requests-table">
         <thead><tr>
           <th class="sortable">Title</th><th>IMDB</th><th class="sortable">Type</th>
-          <th class="sortable">Status</th><th class="sortable">Added</th><th></th>
+          <th class="sortable">Status</th><th class="sortable">Origin</th><th class="sortable">Added</th><th></th>
         </tr></thead>
-        <tbody id="requests-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+        <tbody id="requests-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div id="requests-table-pagination"></div>
@@ -1188,7 +1188,7 @@
           `<div class="activity-item">
             <span class="activity-time">${(i.next_retry_at||'').slice(0,16)}</span>
             <span class="activity-icon">⏳</span>
-            <span class="activity-text"><b>${i.title}</b> <span class="dim">attempt ${i.attempt}</span></span>
+            <span class="activity-text"><b>${i.title}</b> <span class="dim">attempt ${i.attempt} · ${(i.origin||'manual') === 'auto' ? 'Auto-Approve' : 'Manual'}</span></span>
           </div>`).join('');
       }
     } catch(e) {}
@@ -1519,7 +1519,7 @@
   // ── Requests ──
   async function refreshRequests() {
     const body = document.getElementById('requests-body');
-    body.innerHTML = '<tr><td colspan="6" class="empty">Loading...</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">Loading...</td></tr>';
     try {
       const r = await fetch('/ui/api/requests/all');
       const d = await r.json();
@@ -1535,11 +1535,16 @@
         const deleteCell = isSeries ? '' : `
             <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)"
                     onclick="deleteRequest(${i.id}, '${(i.title||'').replace(/'/g,"\\'")}')">Delete</button>`;
+        const isAuto = (i.origin || 'manual') === 'auto';
+        const originCell = isAuto
+          ? '<span style="color:var(--indigo)">Auto-Approve</span>'
+          : '<span class="dim">Manual</span>';
         let html = `<tr${detailId ? ` data-detail-target="${detailId}"` : ''}>
           <td>${titleCell}</td>
           <td class="mono" style="font-size:11px">${i.imdb_id||'---'}</td>
           <td class="dim">${i.media_type||'---'}</td>
           <td style="${statusCls[st]||''};font-weight:600;text-transform:capitalize">${st.replace('_',' ')}</td>
+          <td>${originCell}</td>
           <td class="dim">${(i.created_at||'').slice(0,16)}</td>
           <td>${deleteCell}</td>
         </tr>`;
@@ -1550,18 +1555,18 @@
             ).join('');
             return `<div style="margin:4px 0"><b style="${statusCls[s.status]||''}">Season ${s.season} (${s.status})</b><br>${epHtml || '<span class="dim">no episodes tracked yet</span>'}</div>`;
           }).join('') || '<span class="dim">No season data yet</span>';
-          html += `<tr id="${detailId}" data-detail-row="true" style="display:none"><td colspan="6" style="font-size:11px;background:rgba(127,127,127,.08)">${seasonHtml}</td></tr>`;
+          html += `<tr id="${detailId}" data-detail-row="true" style="display:none"><td colspan="7" style="font-size:11px;background:rgba(127,127,127,.08)">${seasonHtml}</td></tr>`;
         }
         return html;
       });
-      if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No requests</td></tr>'; return; }
+      if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty">No requests</td></tr>'; return; }
       _paginationState['requests-table'] = _paginationState['requests-table'] || { page: 1, size: 25 };
       _paginationState['requests-table']._allRows = rows;
       _paginationState['requests-table']._rows = rows;
       _paginationState['requests-table'].page = 1;
       paginateTable('requests-table', rows, _paginationState['requests-table'].size);
     } catch(e) {
-      body.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">${e.message}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--red)">${e.message}</td></tr>`;
     }
   }
   async function deleteRequest(id, title) {

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS requests (
     source      TEXT,
     info_hash   TEXT,
     error       TEXT,
+    origin      TEXT    NOT NULL DEFAULT 'manual',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
 );
@@ -399,6 +400,9 @@ def _migrate() -> None:
         if "languages" not in req_cols:
             conn.execute("ALTER TABLE requests ADD COLUMN languages TEXT")
             log.info("Migration: added requests.languages")
+        if "origin" not in req_cols:
+            conn.execute("ALTER TABLE requests ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'")
+            log.info("Migration: added requests.origin")
         if "tmdb_id" not in req_cols:
             conn.execute("ALTER TABLE requests ADD COLUMN tmdb_id INTEGER")
             log.info("Migration: added requests.tmdb_id")
@@ -501,19 +505,27 @@ def prune_old(days: int = 90) -> dict[str, int]:
 # ── requests ──────────────────────────────────────────────────────────────────
 
 def insert_request(title: str, imdb_id: str, media_type: str, seasons: list[int] | None = None,
-                    tmdb_id: int | None = None) -> int:
+                    tmdb_id: int | None = None, origin: str = "manual") -> int:
+    """origin is only set on first insert (see upsert_monitored_series for the
+    same convention); a later call for the same imdb_id never changes it."""
     seasons_str = ",".join(str(s) for s in (seasons or []))
     with _connect() as conn:
-        cur = conn.execute(
-            "INSERT INTO requests (title, imdb_id, media_type, seasons, tmdb_id) VALUES (?, ?, ?, ?, ?) "
+        # cursor.lastrowid is unreliable here: on the ON CONFLICT/UPDATE path
+        # (i.e. every retry of an existing imdb_id) SQLite does NOT update
+        # last_insert_rowid(), so it can return a stale id left over from some
+        # unrelated row's last real INSERT on this connection. Look the row up
+        # explicitly instead of trusting lastrowid.
+        conn.execute(
+            "INSERT INTO requests (title, imdb_id, media_type, seasons, tmdb_id, origin) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(imdb_id) DO UPDATE SET "
             "title=excluded.title, seasons=COALESCE(excluded.seasons, seasons), "
             "tmdb_id=COALESCE(excluded.tmdb_id, tmdb_id), "
             "updated_at=strftime('%Y-%m-%d %H:%M:%S', 'now')",
-            (title, imdb_id, media_type, seasons_str or None, tmdb_id),
+            (title, imdb_id, media_type, seasons_str or None, tmdb_id, origin),
         )
+        row = conn.execute("SELECT id FROM requests WHERE imdb_id=?", (imdb_id,)).fetchone()
         conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+        return row["id"]
 
 
 def update_request(row_id: int, status: str, quality: str | None = None,

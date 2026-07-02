@@ -1791,6 +1791,9 @@ def create_strm_for_torrent(torrent_id: int, title: str, media_type: str,
     if not item:
         log.warning("Torrent %s not found in mylist for strm creation", torrent_id)
         return 0
+    if not torbox_mod._is_ready(item):
+        log.info("Torrent %s (%s) not ready yet  -  skipping strm creation for now", torrent_id, title)
+        return 0
 
     if media_type == 'movie':
         main_file = _pick_main_movie_file(item.get('files') or [])
