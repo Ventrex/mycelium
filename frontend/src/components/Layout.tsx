@@ -12,10 +12,6 @@ const navItems = [
 ];
 
 const adminItems = [
-  { to: '/auto-approve', label: 'Auto-Approve', icon: '🤖' },
-  { to: '/blacklist', label: 'Blacklist', icon: '🚫' },
-  { to: '/subtitles', label: 'Subtitles', icon: '💬' },
-  { to: '/logs', label: 'Logs', icon: '📜' },
   { to: '/admin', label: 'Admin', icon: '⚙️' },
 ];
 
@@ -361,14 +357,10 @@ function Breadcrumb({ path }: { path: string }) {
     '/shows': 'Shows',
     '/movies': 'Movies',
     '/library': 'Library',
-    '/subtitles': 'Subtitles',
     '/watchlist': 'Watchlist',
     '/search': 'Search',
     '/requests': 'My Requests',
     '/settings': 'Settings',
-    '/auto-approve': 'Auto-Approve',
-    '/blacklist': 'Blacklist',
-    '/logs': 'Logs',
     '/admin': 'Admin',
     '/manual': 'Manual',
     '/login': 'Sign in',

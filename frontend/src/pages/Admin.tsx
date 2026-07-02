@@ -1,448 +1,57 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../api';
-import { usePlugins } from '../hooks/usePlugins';
+import AutoApprove from './AutoApprove';
+import Blacklist from './Blacklist';
+import Subtitles from './Subtitles';
+import Logs from './Logs';
+
+const TABS = [
+  { id: 'overview', label: 'Overview & Maintenance', icon: '⚙️' },
+  { id: 'auto-approve', label: 'Auto-Approve', icon: '🤖' },
+  { id: 'blacklist', label: 'Blacklist', icon: '🚫' },
+  { id: 'subtitles', label: 'Subtitles', icon: '💬' },
+  { id: 'logs', label: 'Logs', icon: '📜' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export default function Admin() {
-  const qc = useQueryClient();
-  const { data: pending } = useQuery({
-    queryKey: ['user-requests', 'pending'],
-    queryFn: () => api.userRequests('pending'),
-  });
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: api.users });
-  const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session });
-
-  const { plugins } = usePlugins();
-  // Collect all user_fields contributed by loaded plugins: [{field, label}]
-  const pluginUserFields = plugins.flatMap(p =>
-    (p.user_fields || []).map(f => ({
-      field: f,
-      label: p.user_field_labels?.[f] ?? f,
-    }))
-  );
-  const isBootstrap = !users?.users || users.users.length === 0;
-
-  const approveMut = useMutation({
-    mutationFn: (id: number) => api.approveRequest(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['user-requests'] }),
-  });
-  const denyMut = useMutation({
-    mutationFn: ({ id, note }: { id: number; note?: string }) => api.denyRequest(id, note),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['user-requests'] }),
-  });
-  const updateMut = useMutation({
-    mutationFn: ({ id, fields }: { id: number; fields: any }) => api.updateUser(id, fields),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
-  });
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => api.deleteUser(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
-  });
+  const [tab, setTab] = useState<TabId>('overview');
 
   return (
-    <div className="space-y-8">
-      {isBootstrap && (
-        <div className="bg-accent/10 border border-accent/30 rounded-lg p-4 text-sm">
-          <strong>First-run bootstrap:</strong> No users exist yet. The first account you create
-          will become the admin.
-        </div>
+    <div className="space-y-4">
+      <div className="flex gap-2 flex-wrap border-b border-border pb-3">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-1.5 rounded-lg text-sm border transition flex items-center gap-1.5 ${
+              tab === t.id
+                ? 'border-accent bg-accent/10 text-white'
+                : 'border-border text-muted hover:text-white'
+            }`}
+          >
+            <span aria-hidden="true">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Overview/Maintenance/Users/Settings/Releases still live in the
+          server-rendered dashboard - it's a lot of working functionality
+          that doesn't need a React rewrite just to sit under this tab bar. */}
+      {tab === 'overview' && (
+        <iframe
+          src="/admin?embed=1"
+          className="w-full border-0"
+          style={{ height: 'calc(100vh - 160px)' }}
+          title="Overview & Maintenance"
+        />
       )}
-
-      <section>
-        <h2 className="text-lg font-bold mb-3">Pending requests</h2>
-        {!pending?.items || pending.items.length === 0 ? (
-          <div className="text-muted text-sm">No pending requests</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="text-xs text-muted uppercase border-b border-border">
-              <tr>
-                <th className="text-left py-2 px-3">User</th>
-                <th className="text-left py-2 px-3">Title</th>
-                <th className="text-left py-2 px-3">Type</th>
-                <th className="text-left py-2 px-3">IMDB</th>
-                <th className="text-left py-2 px-3">Requested</th>
-                <th className="text-right py-2 px-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pending.items.map((r) => (
-                <tr key={r.id} className="border-b border-border/50">
-                  <td className="py-2 px-3 font-medium">{r.username}</td>
-                  <td className="py-2 px-3">{r.title}</td>
-                  <td className="py-2 px-3 text-muted">{r.media_type}</td>
-                  <td className="py-2 px-3 text-muted text-xs">
-                    <a href={`https://www.imdb.com/title/${r.imdb_id}/`} target="_blank" rel="noopener">{r.imdb_id}</a>
-                  </td>
-                  <td className="py-2 px-3 text-muted text-xs">{r.created_at}</td>
-                  <td className="py-2 px-3 text-right">
-                    <button
-                      onClick={() => approveMut.mutate(r.id)}
-                      className="px-3 py-1 rounded bg-ok/20 text-ok text-xs hover:bg-ok/30"
-                    >
-                      ✓ Approve
-                    </button>
-                    <button
-                      onClick={() => denyMut.mutate({ id: r.id, note: prompt('Reason?') || '' })}
-                      className="ml-2 px-3 py-1 rounded bg-red-500/20 text-red-400 text-xs hover:bg-red-500/30"
-                    >
-                      ✗ Deny
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-bold mb-3">Users</h2>
-        <CreateUserForm />
-        {users?.users && users.users.length > 0 && (
-          <table className="w-full text-sm mt-4">
-            <thead className="text-xs text-muted uppercase border-b border-border">
-              <tr>
-                <th className="text-left py-2 px-3">Username</th>
-                <th className="text-left py-2 px-3">Role</th>
-                <th className="text-left py-2 px-3">Auto-approve</th>
-                <th className="text-left py-2 px-3">Enabled</th>
-                {pluginUserFields.map(({ field, label }) => (
-                  <th key={field} className="text-left py-2 px-3">{label}</th>
-                ))}
-                <th className="text-left py-2 px-3">Last login</th>
-                <th className="text-right py-2 px-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.users.map((u) => (
-                <tr key={u.id} className="border-b border-border/50">
-                  <td className="py-2 px-3 font-medium">{u.username}</td>
-                  <td className="py-2 px-3 text-muted">{u.role}</td>
-                  <td className="py-2 px-3">
-                    <Toggle
-                      on={u.auto_approve}
-                      onClick={() => updateMut.mutate({ id: u.id, fields: { auto_approve: !u.auto_approve } })}
-                    />
-                  </td>
-                  <td className="py-2 px-3">
-                    <Toggle
-                      on={u.enabled}
-                      onClick={() => updateMut.mutate({ id: u.id, fields: { enabled: !u.enabled } })}
-                    />
-                  </td>
-                  {pluginUserFields.map(({ field }) => (
-                    <td key={field} className="py-2 px-3">
-                      <Toggle
-                        on={!!(u as any)[field]}
-                        onClick={() => updateMut.mutate({ id: u.id, fields: { [field]: !(u as any)[field] } })}
-                      />
-                    </td>
-                  ))}
-                  <td className="py-2 px-3 text-muted text-xs">{u.last_login || ' - '}</td>
-                  <td className="py-2 px-3 text-right">
-                    {session?.user?.id !== u.id && (
-                      <button
-                        onClick={() => confirm(`Delete ${u.username}?`) && deleteMut.mutate(u.id)}
-                        className="px-3 py-1 rounded bg-red-500/20 text-red-400 text-xs hover:bg-red-500/30"
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <ArrImportPanel />
-      <MaintenancePanel />
+      {tab === 'auto-approve' && <AutoApprove />}
+      {tab === 'blacklist' && <Blacklist />}
+      {tab === 'subtitles' && <Subtitles />}
+      {tab === 'logs' && <Logs />}
     </div>
-  );
-}
-
-function CreateUserForm() {
-  const qc = useQueryClient();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [autoApprove, setAutoApprove] = useState(false);
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const mut = useMutation({
-    mutationFn: () => api.createUser({ username, password, role, auto_approve: autoApprove }),
-    onSuccess: (r) => {
-      setMsg({ kind: 'ok', text: r.message || `Created ${username}` });
-      setUsername('');
-      setPassword('');
-      qc.invalidateQueries({ queryKey: ['users'] });
-    },
-    onError: (e: any) => setMsg({ kind: 'err', text: e.message }),
-  });
-
-  return (
-    <div className="bg-card rounded-lg border border-border p-4">
-      <div className="flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-[10px] uppercase tracking-wider text-muted mb-1">Username</label>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="bg-bg border border-border rounded px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-[10px] uppercase tracking-wider text-muted mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="bg-bg border border-border rounded px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-[10px] uppercase tracking-wider text-muted mb-1">Role</label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as any)}
-            className="bg-bg border border-border rounded px-3 py-2 text-sm"
-          >
-            <option value="user">user</option>
-            <option value="admin">admin</option>
-          </select>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoApprove}
-            onChange={(e) => setAutoApprove(e.target.checked)}
-          />
-          Auto-approve
-        </label>
-        <button
-          type="button"
-          disabled={!username || password.length < 4 || mut.isPending}
-          onClick={() => mut.mutate()}
-          className="px-4 py-2 rounded bg-accent hover:bg-accent/90 text-sm font-semibold
-                      disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {mut.isPending ? 'Creating…' : 'Create user'}
-        </button>
-      </div>
-      {msg && (
-        <div className={`mt-3 text-xs ${msg.kind === 'ok' ? 'text-ok' : 'text-red-400'}`}>{msg.text}</div>
-      )}
-    </div>
-  );
-}
-
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-10 h-5 rounded-full transition relative ${on ? 'bg-accent' : 'bg-border'}`}
-    >
-      <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-          on ? 'translate-x-5' : 'translate-x-0.5'
-        }`}
-      />
-    </button>
-  );
-}
-
-function ArrImportPanel() {
-  const [msg, setMsg] = useState<string>('');
-  const { data: s } = useQuery({
-    queryKey: ['arr-import-status'],
-    queryFn: api.arrStatus,
-    refetchInterval: (q) => (q.state.data?.running ? 1000 : 5000),
-  });
-  const test = async (kind: 'radarr' | 'sonarr') => {
-    setMsg(`Testing ${kind}…`);
-    try {
-      const r = await api.arrTest(kind);
-      setMsg(r.ok ? `✓ ${kind} reachable` : `✗ ${kind} unreachable${r.error ? ': ' + r.error : ''}`);
-    } catch (e: any) {
-      setMsg(`✗ ${e.message}`);
-    }
-  };
-  const run = async (kind: 'radarr' | 'sonarr') => {
-    if (!confirm(`Start ${kind} import?`)) return;
-    setMsg('');
-    await api.arrRun(kind);
-  };
-
-  const pct = s && s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
-
-  return (
-    <section>
-      <h2 className="text-lg font-bold mb-3">Radarr / Sonarr import</h2>
-      <div className="bg-card rounded-lg border border-border p-4">
-        <p className="text-muted text-sm mb-3">
-          Configure RADARR_URL/SONARR_URL + API keys in Settings, then test and run import here.
-        </p>
-        <div className="flex gap-2 flex-wrap mb-3">
-          <button onClick={() => test('radarr')} className="px-3 py-1.5 rounded border border-border text-sm hover:bg-bg">Test Radarr</button>
-          <button onClick={() => run('radarr')} disabled={s?.running} className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50">▶ Import Radarr</button>
-          <button onClick={() => test('sonarr')} className="px-3 py-1.5 rounded border border-border text-sm hover:bg-bg">Test Sonarr</button>
-          <button onClick={() => run('sonarr')} disabled={s?.running} className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50">▶ Import Sonarr</button>
-          <button
-            onClick={async () => {
-              if (!confirm('Import all Sonarr series + search for all episodes and create .strm files. This runs in the background and may take a while. Continue?')) return;
-              setMsg('Series backfill started  -  runs in background, check logs for progress…');
-              await fetch('/ui/api/series-backfill', { method: 'POST' });
-            }}
-            disabled={s?.running}
-            className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50"
-          >
-            ▶ Sync all series + episodes
-          </button>
-        </div>
-
-        {s && (s.running || s.total > 0) && (
-          <div className="mb-3">
-            <div className="flex justify-between text-xs text-muted mb-1">
-              <span>
-                {s.running ? `Importing ${s.kind}…` : `Finished ${s.kind || ''}`}  -  {s.message}
-              </span>
-              <span>{s.done}/{s.total} ({pct}%)</span>
-            </div>
-            <div className="w-full h-2 bg-bg rounded overflow-hidden">
-              <div
-                className={`h-full transition-all ${s.running ? 'bg-accent' : 'bg-ok'}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <div className="flex gap-4 text-xs text-muted mt-1">
-              <span className="text-ok">+{s.added} added</span>
-              <span>⏭ {s.skipped} skipped</span>
-              <span className="text-red-400">✗ {s.errors} errors</span>
-            </div>
-          </div>
-        )}
-
-        {msg && <div className="font-mono text-xs text-muted">{msg}</div>}
-      </div>
-    </section>
-  );
-}
-
-function MaintenancePanel() {
-  const [result, setResult] = useState<string>('');
-  const [busy, setBusy] = useState(false);
-
-  const repairStrms = async () => {
-    setBusy(true);
-    setResult('Scanning .strm files…');
-    try {
-      const r = await fetch('/ui/api/repair-strms', { method: 'POST' });
-      const data = await r.json();
-      const parts: string[] = [`scanned: ${data.scanned}`, `ok: ${data.ok}`];
-      if (data.missing_strm) parts.push(`missing strm fixed: ${data.missing_strm}`);
-      if (data.orphaned_tokens) parts.push(`orphaned tokens fixed: ${data.orphaned_tokens}`);
-      if (data.relinked) parts.push(`relinked: ${data.relinked}`);
-      if (data.requeued) parts.push(`requeued: ${data.requeued}`);
-      if (data.skipped) parts.push(`skipped: ${data.skipped}`);
-      const allGood = !data.missing_strm && !data.orphaned_tokens && !data.relinked && !data.requeued;
-      setResult('Done  -  ' + parts.join(', ') + (allGood ? '  -  all links look good' : ''));
-    } catch (e: any) {
-      setResult(`Error: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cleanupDuplicateStrms = async () => {
-    setBusy(true);
-    setResult('Scanning for duplicate .strm files…');
-    try {
-      const r = await fetch('/ui/api/cleanup-duplicate-strms', { method: 'POST' });
-      const data = await r.json();
-      const parts = [`scanned: ${data.scanned}`, `cleaned: ${data.cleaned}`];
-      if (data.skipped) parts.push(`skipped: ${data.skipped}`);
-      setResult('Done  -  ' + parts.join(', ') + (data.cleaned > 0 ? '  -  do a full Jellyfin library rescan now' : '  -  nothing to clean'));
-    } catch (e: any) {
-      setResult(`Error: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const migrateCanonical = async () => {
-    if (!confirm('This renames movie folders to TMDB canonical names and removes duplicates. Jellyfin needs a full rescan afterwards. Continue?')) return;
-    setBusy(true);
-    setResult('Migrating to canonical names…');
-    try {
-      const r = await fetch('/ui/api/migrate-canonical', { method: 'POST' });
-      const data = await r.json();
-      const parts = [
-        `scanned: ${data.scanned}`,
-        `renamed: ${data.renamed}`,
-        `duplicates removed: ${data.merged}`,
-        `skipped: ${data.skipped}`,
-        `no imdb_id: ${data.no_imdb}`,
-        ...(data.errors ? [`errors: ${data.errors}`] : []),
-      ];
-      setResult('Done  -  ' + parts.join(', ') + '  -  do a full Jellyfin library rescan now');
-    } catch (e: any) {
-      setResult(`Error: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section>
-      <h2 className="text-lg font-bold mb-3">Maintenance</h2>
-      <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-        <div>
-          <p className="text-sm font-medium mb-1">Migrate to canonical names</p>
-          <p className="text-muted text-xs mb-2">
-            Renames all movie folders to TMDB canonical names (imdb_id is leading).
-            Merges duplicates (e.g. Cyrillic + English for same film). Run once, then do a
-            full Jellyfin library rescan.
-          </p>
-          <button
-            onClick={migrateCanonical}
-            disabled={busy}
-            className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50"
-          >
-            {busy ? 'Migrating…' : 'Migrate to canonical names'}
-          </button>
-        </div>
-        <div className="border-t border-border pt-3">
-          <p className="text-sm font-medium mb-1">Clean up duplicate .strm files</p>
-          <p className="text-muted text-xs mb-2">
-            Removes extra .strm files from folders that have more than one (e.g. after
-            migration left behind old Cyrillic filenames). Keeps the file matching the
-            folder name. Run once after migration, then rescan Jellyfin.
-          </p>
-          <button
-            onClick={cleanupDuplicateStrms}
-            disabled={busy}
-            className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50"
-          >
-            {busy ? 'Cleaning…' : 'Clean up duplicate strm files'}
-          </button>
-        </div>
-        <div className="border-t border-border pt-3">
-          <p className="text-sm font-medium mb-1">Repair broken .strm links</p>
-          <p className="text-muted text-xs mb-2">
-            Scans movie .strm files for expired direct TorBox CDN URLs. Re-links them to a
-            catbox proxy token (if available) or deletes and requeues for reprocessing.
-          </p>
-          <button
-            onClick={repairStrms}
-            disabled={busy}
-            className="px-3 py-1.5 rounded bg-accent text-sm font-semibold disabled:opacity-50"
-          >
-            {busy ? 'Scanning…' : 'Repair broken strm files'}
-          </button>
-        </div>
-        {result && <div className="font-mono text-xs text-muted border-t border-border pt-2">{result}</div>}
-      </div>
-    </section>
   );
 }

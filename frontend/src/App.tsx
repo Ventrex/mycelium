@@ -7,10 +7,7 @@ import Requests from './pages/Requests';
 import Settings from './pages/Settings';
 import Shows from './pages/Shows';
 import Movies from './pages/Movies';
-import AutoApprove from './pages/AutoApprove';
-import Blacklist from './pages/Blacklist';
-import Subtitles from './pages/Subtitles';
-import Logs from './pages/Logs';
+import Admin from './pages/Admin';
 import Login from './pages/Login';
 import ProfileSelect from './pages/ProfileSelect';
 
@@ -26,16 +23,15 @@ export default function App() {
         <Route path="search" element={<Search />} />
         <Route path="shows" element={<Shows />} />
         <Route path="movies" element={<Movies />} />
-        <Route path="auto-approve" element={<AutoApprove />} />
-        <Route path="blacklist" element={<Blacklist />} />
-        <Route path="subtitles" element={<Subtitles />} />
-        <Route path="logs" element={<Logs />} />
         <Route path="requests" element={<Requests />} />
         <Route path="wanted" element={<Navigate to="/requests" replace />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="admin" element={
-          <iframe src="/admin?embed=1" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />
-        } />
+        <Route path="admin" element={<Admin />} />
+        {/* Auto-Approve/Blacklist/Subtitles/Logs now live as tabs on /admin. */}
+        <Route path="auto-approve" element={<Navigate to="/admin" replace />} />
+        <Route path="blacklist" element={<Navigate to="/admin" replace />} />
+        <Route path="subtitles" element={<Navigate to="/admin" replace />} />
+        <Route path="logs" element={<Navigate to="/admin" replace />} />
         <Route path="manual" element={
           <iframe src="/docs/install-guide.html" className="w-full border-0" style={{ height: 'calc(100vh - 57px)' }} />
         } />
