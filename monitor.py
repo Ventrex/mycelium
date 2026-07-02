@@ -143,10 +143,14 @@ def run_series_check() -> None:
 
     # Retry wanted episodes  -  keep watching indefinitely (like Radarr/Sonarr).
     # In catbox mode no TorBox quota is consumed so we never pause for budget.
+    # Anything hit by the createtorrent budget is handed to the retry queue
+    # instead of waiting for the next (multi-hour) series check, so it gets
+    # picked up again within RETRY_QUEUE_INTERVAL_MINUTES like a movie would.
     import processor
+    import retry_queue
     catbox_mode = _settings.get("CATBOX_MODE", False)
     wanted = db.get_wanted_episodes(max_attempts=10_000)
-    for ep in wanted:
+    for i, ep in enumerate(wanted):
         air_date = ep.get("air_date")
         if air_date and air_date > today:
             db.mark_episode_status(ep["imdb_id"], ep["season"], ep["episode"], "not_aired")
@@ -157,20 +161,31 @@ def run_series_check() -> None:
         if not catbox_mode:
             usage = torbox.createtorrent_usage()
             if usage["count"] >= torbox._CREATETORRENT_LIMIT_HOUR - 2:
-                log.info("Monitor: createtorrent budget low (%d/%d)  -  pausing episode retries",
-                         usage["count"], torbox._CREATETORRENT_LIMIT_HOUR)
+                log.info("Monitor: createtorrent budget low (%d/%d)  -  handing %d remaining "
+                         "episode(s) to the retry queue", usage["count"],
+                         torbox._CREATETORRENT_LIMIT_HOUR, len(wanted) - i)
+                for remaining in wanted[i:]:
+                    retry_queue.schedule_episode(remaining, origin=_series_origin(remaining["imdb_id"]))
                 break
         try:
-            _retry_episode(ep)
+            retry_episode(ep)
         except processor.RateLimited:
             if catbox_mode:
                 log.info("Monitor: checkcached rate limited  -  waiting 60s then continuing")
                 import time; time.sleep(60)
                 continue
-            log.info("Monitor: rate limited  -  pausing episode retries until next run")
+            log.info("Monitor: rate limited  -  handing %d remaining episode(s) to the retry queue",
+                     len(wanted) - i)
+            for remaining in wanted[i:]:
+                retry_queue.schedule_episode(remaining, origin=_series_origin(remaining["imdb_id"]))
             break
 
     log.info("Monitor: series check complete")
+
+
+def _series_origin(imdb_id: str) -> str:
+    series = db.get_monitored_series_by_imdb(imdb_id)
+    return (series or {}).get("origin") or "manual"
 
 
 def recheck_series(imdb_id: str) -> dict:
@@ -180,6 +195,7 @@ def recheck_series(imdb_id: str) -> dict:
     if not series:
         return {"checked": 0, "requested": 0, "error": "not monitored"}
     import processor
+    import retry_queue
     tmdb_id = series.get("tmdb_id")
     title = series.get("title")
     monitor_mode = series.get("monitor_mode") or "all"
@@ -214,10 +230,11 @@ def recheck_series(imdb_id: str) -> dict:
             db.mark_episode_status(ep["imdb_id"], ep["season"], ep["episode"], "found")
             continue
         try:
-            if _retry_episode(ep):
+            if retry_episode(ep):
                 requested += 1
         except processor.RateLimited:
-            log.info("recheck_series: rate limited  -  stopping early for %s", title)
+            log.info("recheck_series: rate limited  -  handing off to retry queue for %s", title)
+            retry_queue.schedule_episode(ep, origin=series.get("origin") or "manual")
             if not catbox_mode:
                 break
     log.info("Recheck series %s: %d wanted checked, %d requested", title, checked, requested)
@@ -245,7 +262,7 @@ def run_series_backfill() -> dict:
     return summary
 
 
-def _retry_episode(ep: dict) -> bool:
+def retry_episode(ep: dict) -> bool:
     """Search + add one episode. Returns True if added. Raises processor.RateLimited
     when the TorBox createtorrent budget is gone (so the caller can pause)."""
     import processor
@@ -329,11 +346,11 @@ def search_episode_now(imdb_id: str, title: str, season: int, episode: int) -> b
     ep_rows = [e for e in db.get_all_wanted_episodes()
                if e["imdb_id"] == imdb_id and e["season"] == season and e["episode"] == episode]
     if ep_rows:
-        _retry_episode(ep_rows[0])
+        retry_episode(ep_rows[0])
     else:
         fake = {"id": 0, "imdb_id": imdb_id, "title": title,
                 "season": season, "episode": episode, "attempt_count": 0}
-        _retry_episode(fake)
+        retry_episode(fake)
     return strm_exists_episode(title, season, episode)
 
 

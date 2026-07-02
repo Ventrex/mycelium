@@ -513,6 +513,7 @@ def process(req: MediaRequest, _retry_attempt: int = 0) -> bool:
                 db.enqueue_retry(
                     req.imdb_id, req.title, req.media_type, req.seasons,
                     _retry_attempt, delay_seconds=60,
+                    origin=getattr(req, "origin", "manual"),
                 )
             except Exception:
                 log.exception("Could not re-enqueue %s after mutex miss", req.imdb_id)
