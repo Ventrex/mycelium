@@ -1723,8 +1723,19 @@ def _resolve_url(item: dict, file_id: int, file_name: str, info: dict, media_typ
     return _get_stream_url(torrent_id, file_id)
 
 
-def process_torrent(item: dict) -> int:
-    """Create .strm files for all video files in a ready torrent. Returns new file count."""
+def process_torrent(item: dict, canonical_title: str | None = None,
+                     imdb_id: str | None = None, tmdb_id: int | None = None) -> int:
+    """Create .strm files for all video files in a ready torrent. Returns new file count.
+
+    canonical_title/imdb_id/tmdb_id: when the caller already knows which show/movie
+    this torrent belongs to (e.g. right after adding it for a specific request),
+    pass them so the folder uses the known canonical title instead of whatever
+    _parse_info() derives from this particular torrent's raw name. Different
+    torrent uploaders name the same show differently, so leaving every add to
+    parse its own folder name is how the same series ends up in 5+ separate
+    folders. A tvshow.nfo is also written so later duplicate-merge passes can
+    match reliably by IMDb id instead of by fuzzy title guessing.
+    """
     torrent_id = item.get('id')
     torrent_name = _clean_torrent_name(item.get('name') or '')
     files = item.get('files') or []
@@ -1760,6 +1771,7 @@ def process_torrent(item: dict) -> int:
         return 0
 
     written = 0
+    nfo_written = False
     for f in video_files:
         file_id = f.get('id')
         file_name = f.get('name') or ''
@@ -1767,6 +1779,10 @@ def process_torrent(item: dict) -> int:
         if info is None:
             log.warning("Cannot determine placement: torrent=%r file=%r", torrent_name, file_name)
             continue
+        if canonical_title and info['type'] != 'movie':
+            clean_canonical = _safe(canonical_title)
+            if clean_canonical:
+                info = dict(info, title=clean_canonical)
         path = _strm_path(info)
         if path.exists():
             continue
@@ -1775,6 +1791,12 @@ def process_torrent(item: dict) -> int:
             continue
         if _write_strm(path, url):
             written += 1
+            if imdb_id and info['type'] != 'movie' and not nfo_written:
+                series_root = path.parent.parent
+                tvshow_nfo = series_root / "tvshow.nfo"
+                if not tvshow_nfo.exists():
+                    _write_nfo(path, imdb_id, tmdb_id=tmdb_id, nfo_path=tvshow_nfo, media_type="series")
+                nfo_written = True
 
     return written
 
@@ -1814,7 +1836,7 @@ def create_strm_for_torrent(torrent_id: int, title: str, media_type: str,
             _write_nfo(path, imdb_id, tmdb_id)
         return 1 if written else 0
 
-    return process_torrent(item)
+    return process_torrent(item, canonical_title=title, imdb_id=imdb_id, tmdb_id=tmdb_id)
 
 
 def create_series_strms_from_files(torrent_name: str, files_with_urls: list) -> int:
