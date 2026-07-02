@@ -91,6 +91,7 @@ def series_rows() -> list[dict]:
             "imdb_id": imdb_id,
             "media_type": "series",
             "status": overall,
+            "origin": series.get("origin") or "manual",
             "created_at": series.get("added_at_date") or series.get("last_checked"),
             "seasons": seasons,
         })

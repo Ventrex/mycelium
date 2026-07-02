@@ -118,7 +118,15 @@ def _try_add_magnet(stream: TorrentioStream, label: str) -> bool:
         return True
     try:
         torbox.add_magnet(stream.magnet, reason="processor")
-        torbox.wait_until_ready(stream.info_hash)
+        item = torbox.wait_until_ready(stream.info_hash)
+        if not item or not torbox._is_ready(item):
+            # wait_until_ready() timed out without TorBox ever reporting the
+            # torrent ready. Don't create a .strm for a file that isn't there
+            # yet: skip this candidate now, it'll be picked up again (already
+            # in the library, likely finished by then) on the next retry/recheck.
+            log.warning("Torbox still downloading %s after the poll timeout  -  "
+                        "not creating a .strm yet, will recheck later", label)
+            return False
         return True
     except torbox.RateLimited:
         log.warning("createtorrent budget exhausted adding %s  -  will retry later", label)
@@ -526,7 +534,7 @@ def _process_locked(req: MediaRequest, _retry_attempt: int) -> bool:
              req.title, req.media_type, req.imdb_id, _retry_attempt)
     started = time.monotonic()
     row_id = db.insert_request(req.title, req.imdb_id, req.media_type, req.seasons,
-                                tmdb_id=req.tmdb_id)
+                                tmdb_id=req.tmdb_id, origin=getattr(req, "origin", "manual"))
 
     # Never accept a release for a movie that isn't out yet: pre-release
     # blockbusters attract fake/junk cached torrents (mislabeled CAMs, scam
