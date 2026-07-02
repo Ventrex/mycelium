@@ -198,11 +198,23 @@ SETTING_GROUPS = [
         "keys": [
             "TORBOX_API_KEY", "TORBOX_BASE_URL",
             "JELLYFIN_URL", "JELLYFIN_API_KEY",
-            "SEERR_URL", "SEERR_API_KEY",
             "TMDB_API_KEY",
+            "ZILEAN_ENABLED",
+        ],
+    },
+    {
+        "id": "optional_integrations",
+        "title": "Optional integrations (Seerr, Trakt, RealDebrid)",
+        "category": "general",
+        # Collapsed by default unless one of these is already configured -
+        # most deployments don't use Seerr/Trakt/RealDebrid at all (SPA
+        # discovery + TorBox cover the default flow), so showing all their
+        # fields up front just adds clutter.
+        "optional": True,
+        "keys": [
+            "SEERR_URL", "SEERR_API_KEY",
             "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET",
             "TRAKT_AUTO_REQUEST", "TRAKT_AUTO_REQUEST_LIMIT",
-            "ZILEAN_ENABLED",
             "REALDEBRID_API_KEY", "MULTI_DEBRID_ENABLED",
         ],
     },
@@ -431,6 +443,7 @@ def all_for_ui() -> list[dict]:
             "id": group["id"],
             "title": group["title"],
             "category": group.get("category", "general"),
+            "optional": group.get("optional", False),
             "items": items,
         })
     return out
