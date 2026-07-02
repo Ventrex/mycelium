@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import type { WantedMovie, WantedEpisode } from '../types';
 
-export default function Wanted() {
+export default function WantedPanel() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'movies' | 'episodes'>('movies');
 
@@ -37,16 +37,9 @@ export default function Wanted() {
   const foundEps = episodes.filter((e) => e.status === 'found');
 
   return (
-    <div className="space-y-6">
+    <section className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1 bg-card rounded-lg p-1">
-          <TabBtn active={tab === 'movies'} onClick={() => setTab('movies')}>
-            Movies {movies.length > 0 && <Pill>{movies.length}</Pill>}
-          </TabBtn>
-          <TabBtn active={tab === 'episodes'} onClick={() => setTab('episodes')}>
-            Episodes {wantedEps.length > 0 && <Pill>{wantedEps.length}</Pill>}
-          </TabBtn>
-        </div>
+        <h2 className="text-lg font-bold">⏳ Wanted</h2>
         <button
           type="button"
           onClick={() => recheckMutation.mutate()}
@@ -60,6 +53,15 @@ export default function Wanted() {
             ? '✓ Recheck running'
             : '↺ Recheck now'}
         </button>
+      </div>
+
+      <div className="flex gap-1 bg-card rounded-lg p-1 w-fit">
+        <TabBtn active={tab === 'movies'} onClick={() => setTab('movies')}>
+          Movies {movies.length > 0 && <Pill>{movies.length}</Pill>}
+        </TabBtn>
+        <TabBtn active={tab === 'episodes'} onClick={() => setTab('episodes')}>
+          Episodes {wantedEps.length > 0 && <Pill>{wantedEps.length}</Pill>}
+        </TabBtn>
       </div>
 
       {tab === 'movies' && (
@@ -122,7 +124,7 @@ export default function Wanted() {
           )}
         </section>
       )}
-    </div>
+    </section>
   );
 }
 

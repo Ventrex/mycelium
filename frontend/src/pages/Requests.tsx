@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
+import WantedPanel from '../components/WantedPanel';
 
 export default function Requests() {
   const qc = useQueryClient();
@@ -23,7 +24,7 @@ export default function Requests() {
           <div className="text-center py-8">
             <div className="text-5xl mb-3">📋</div>
             <h2 className="text-lg font-semibold mb-1">No requests yet</h2>
-            <p className="text-muted text-sm">Anything you add from Discover shows up here.</p>
+            <p className="text-muted text-sm">Anything you add from Movies, Shows or Search shows up here.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -68,6 +69,7 @@ export default function Requests() {
       </section>
 
       <FailedRequestsPanel />
+      <WantedPanel />
     </div>
   );
 }

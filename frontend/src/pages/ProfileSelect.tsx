@@ -165,7 +165,7 @@ export default function ProfileSelect() {
               </label>
             </div>
             <p className="text-xs text-muted">
-              Kids mode and lower age ratings hide horror, thrillers and other mature genres from Discover.
+              Kids mode and lower age ratings hide horror, thrillers and other mature genres from Movies and Shows.
             </p>
             <div className="flex gap-2 justify-end pt-1">
               <button type="button" onClick={closeForm} className="px-4 py-2 rounded border border-border">Cancel</button>

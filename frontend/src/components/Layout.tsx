@@ -4,14 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
 const navItems = [
-  { to: '/', label: 'Discover', icon: '✨', exact: true },
-  { to: '/shows', label: 'Shows', icon: '📺' },
   { to: '/movies', label: 'Movies', icon: '🎬' },
+  { to: '/shows', label: 'Shows', icon: '📺' },
   { to: '/library', label: 'Library', icon: '📚' },
   { to: '/watchlist', label: 'Watchlist', icon: '★' },
   { to: '/requests', label: 'My Requests', icon: '📋' },
-  { to: '/wanted', label: 'Wanted', icon: '⏳' },
-  { to: '/settings', label: 'Settings', icon: '🔌' },
 ];
 
 const adminItems = [
@@ -268,13 +265,6 @@ function ProfileMenu({ username, profile }: { username?: string; profile?: { nam
             >
               Settings
             </Link>
-            <Link
-              to="/manual"
-              onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white"
-            >
-              Manual
-            </Link>
             <a href="/logout" className="block px-3 py-2 text-sm text-muted hover:bg-bg hover:text-white">
               Log out
             </a>
@@ -368,7 +358,6 @@ function RegionPicker({ region }: { region: string }) {
 
 function Breadcrumb({ path }: { path: string }) {
   const map: Record<string, string> = {
-    '/': 'Discover',
     '/shows': 'Shows',
     '/movies': 'Movies',
     '/library': 'Library',
@@ -376,7 +365,6 @@ function Breadcrumb({ path }: { path: string }) {
     '/watchlist': 'Watchlist',
     '/search': 'Search',
     '/requests': 'My Requests',
-    '/wanted': 'Wanted',
     '/settings': 'Settings',
     '/auto-approve': 'Auto-Approve',
     '/blacklist': 'Blacklist',
