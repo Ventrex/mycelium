@@ -1297,8 +1297,23 @@
         const card = document.createElement('div');
         card.className = 'card';
         card.style.marginBottom = '12px';
-        let body = `<div class="card-title">${g.title}</div>
-          <table style="width:100%;font-size:12px">`;
+        // Optional-integration groups (Seerr, Trakt, RealDebrid, ...) start
+        // collapsed unless already configured, so an unused integration
+        // doesn't add clutter to every settings load. Only the identifying
+        // string fields (URL/key/id/secret) count as "configured" - a
+        // toggle or numeric limit has a non-empty default regardless of
+        // whether the integration is actually wired up.
+        const isConfigured = g.items.some(it =>
+          it.kind === 'str' && it.value !== null && it.value !== undefined && String(it.value).trim() !== ''
+        );
+        const collapsedByDefault = !!g.optional && !isConfigured;
+        let body = g.optional
+          ? `<div class="card-title" data-settings-toggle style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
+               <span style="font-size:10px;transition:transform .15s" data-toggle-arrow>${collapsedByDefault ? '▸' : '▾'}</span>
+               <span>${g.title}</span>
+             </div>`
+          : `<div class="card-title">${g.title}</div>`;
+        body += `<table style="width:100%;font-size:12px;${collapsedByDefault ? 'display:none' : ''}" data-settings-body>`;
         g.items.forEach(it => {
           const val = _formatVal(it.value, it.kind);
           if (!it.hot_reload) restartRequiredInitial.set(it.key, val);
@@ -1336,6 +1351,16 @@
         body += '</table>';
         card.innerHTML = body;
         card.dataset.category = g.category || 'general';
+        if (g.optional) {
+          const toggleHdr = card.querySelector('[data-settings-toggle]');
+          const settingsBody = card.querySelector('[data-settings-body]');
+          const arrow = card.querySelector('[data-toggle-arrow]');
+          toggleHdr.addEventListener('click', () => {
+            const nowHidden = settingsBody.style.display === 'none';
+            settingsBody.style.display = nowHidden ? '' : 'none';
+            arrow.textContent = nowHidden ? '▾' : '▸';
+          });
+        }
         root.appendChild(card);
       });
       const presentCategories = new Set(d.groups.map(g => g.category || 'general'));
