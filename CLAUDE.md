@@ -7,24 +7,27 @@ Self-hosted media-request-and-stream pipeline. Watchlist clicks → `.strm` file
 - NOOIT em-dashes (`--`) gebruiken, nergens in code of tekst
 - Repo is PUBLIEK op GitHub -- geen wachtwoorden, tokens of IP-adressen committen
 - Altijd werken op branch `main` tenzij anders afgesproken
-- Docker beheer altijd op de NAS zelf via SSH (zie Commando's)
+- Docker beheer altijd op de Proxmox/Debian server zelf via SSH (zie Commando's)
 - GEEN Co-Authored-By in commit messages
 
 ## Omgeving
 
+Geen NAS/Synology (ondanks wat eerdere versies van dit bestand zeiden) -- draait op
+een Proxmox-server met Debian 13 als guest/host voor de Docker containers.
+
 | Component | Waarde |
 |---|---|
-| NAS | Synology, 10.0.0.10 |
-| Mycelium URL | http://10.0.0.10:8088 |
-| Projectmap NAS | /volume1/docker/mycelium/ |
-| Mount CachyOS | /mnt/nas-docker/mycelium/ |
+| Host | Proxmox + Debian 13 (niet Synology/NAS) |
 | Container | `mycelium`, poort 8088 |
 | Jellyfin | container `jellyfin`, poort 8096 |
-| Plex | container `plex`, poort 32400, docker-compose in `/volume1/docker/plex/` |
+| Plex | container `plex`, poort 32400 |
 | Debrid | TorBox only (geen RealDebrid) |
 | Gebruikers | 4-6 echte gebruikers |
-| Repo | corveck79/mycelium (publiek GitHub) |
+| Repo | Ventrex/mycelium (publiek GitHub) |
 | Branch | main |
+
+Let op: exacte IP-adressen en paden bewust niet hier opgenomen (zie "geen IP-adressen
+committen" hierboven) -- vraag die desnoods opnieuw als een sessie ze nodig heeft.
 
 ## Stack
 
@@ -126,7 +129,7 @@ Virtueel layout: `[ftyp][moov_rewritten][mdat via CDN met offset -moov_size]`
 
 ### Plex docker-compose
 
-`/volume1/docker/plex/docker-compose.yml` - entrypoint kopieert wrapper script:
+`docker-compose.yml` van de plex-service - entrypoint kopieert wrapper script:
 ```yaml
 entrypoint:
   - /bin/sh
@@ -139,9 +142,10 @@ entrypoint:
     chmod +x '/usr/lib/plexmediaserver/Plex Transcoder'
     exec /init
 volumes:
-  - /volume1/docker/mycelium/spore:/spore
-  - /volume1/docker/mycelium/data/plex-media:/plex-media:ro
+  - <projectmap>/spore:/spore
+  - <projectmap>/data/plex-media:/plex-media:ro
 ```
+(exacte pad van de plex docker-compose op de Proxmox/Debian host nog niet bevestigd)
 
 ### Spore commando's
 
@@ -150,7 +154,7 @@ volumes:
 docker exec mycelium python3 -c "import strm_generator; print(strm_generator.regenerate_spore_stubs())"
 
 # Plex herstarten (nieuwe wrapper)
-ssh corveck@10.0.0.10 "cd /volume1/docker/plex && docker compose up -d"
+ssh root@venflix "cd <plex-projectmap> && docker compose up -d"
 ```
 
 ## Bestanden
@@ -203,23 +207,23 @@ Als alle filters niets opleveren: terugval op minder strenge filtering.
 ## Commando's
 
 ```bash
-# Logs live (op NAS)
-ssh corveck@10.0.0.10 "docker logs -f mycelium"
+# Logs live (op de Proxmox/Debian host, container "mycelium")
+ssh root@venflix "docker logs -f mycelium"
 
 # Herstarten na codewijziging
-ssh corveck@10.0.0.10 "cd /volume1/docker/mycelium && docker compose restart"
+ssh root@venflix "cd /opt/VenFlix && docker compose restart"
 
 # Rebuild na Dockerfile wijziging
-ssh corveck@10.0.0.10 "cd /volume1/docker/mycelium && docker compose up -d --build"
+ssh root@venflix "cd /opt/VenFlix && docker compose up -d --build"
 
-# Re-resolve specifiek item
-curl -X POST http://10.0.0.10:8088/ui/api/virtual-items/<token>/re-resolve
+# Re-resolve specifiek item (host:poort van je eigen omgeving invullen)
+curl -X POST http://<host>:8088/ui/api/virtual-items/<token>/re-resolve
 
 # Integrity check
-curl http://10.0.0.10:8088/ui/api/integrity
+curl http://<host>:8088/ui/api/integrity
 
 # Playability state overzicht
-curl http://10.0.0.10:8088/ui/api/playability-state
+curl http://<host>:8088/ui/api/playability-state
 
 # Spore stubs regenereren (direct in container)
 docker exec mycelium python3 -c "import strm_generator; print(strm_generator.regenerate_spore_stubs())"
@@ -228,26 +232,20 @@ docker exec mycelium python3 -c "import strm_generator; print(strm_generator.reg
 ## Git
 
 ```bash
-cd /mnt/nas-docker/mycelium
+cd /opt/VenFlix
 git pull / git push
 ```
 
-Kleine codewijzigingen kunnen rechtstreeks via het gemounte filesystem; daarna committen en pushen.
+Draait direct op het Debian-filesystem (geen SMB-mount meer zoals bij de oude NAS-opzet),
+dus `npm install` en codewijzigingen kunnen gewoon rechtstreeks in `/opt/VenFlix`.
 
 ## Frontend
 
 ```bash
 cd frontend
+npm install
 npm run dev    # Vite dev server
 npm run build  # → ../static/app/
-```
-
-NB: `npm install` faalt op de NAS SMB mount (symlinks niet ondersteund). Kopieer naar /tmp, installeer daar, bouw, en kopieer output terug:
-
-```bash
-cp -r frontend /tmp/mycelium-frontend && cd /tmp/mycelium-frontend
-npm install && npm run build
-cp -r dist/* /mnt/nas-docker/mycelium/static/app/
 ```
 
 ## Tests
