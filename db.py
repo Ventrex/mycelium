@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS monitored_series (
     tmdb_id      INTEGER,
     title        TEXT    NOT NULL,
     seasons      TEXT,
+    origin       TEXT    NOT NULL DEFAULT 'manual',
     status       TEXT    NOT NULL DEFAULT 'active',
     last_checked TEXT,
     created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
@@ -155,14 +156,16 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 
 CREATE TABLE IF NOT EXISTS retry_queue (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    imdb_id         TEXT    NOT NULL,
-    title           TEXT    NOT NULL,
-    media_type      TEXT    NOT NULL,
-    seasons         TEXT,
-    attempt         INTEGER NOT NULL DEFAULT 0,
-    next_retry_at   TEXT    NOT NULL,
-    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    imdb_id             TEXT    NOT NULL,
+    title               TEXT    NOT NULL,
+    media_type          TEXT    NOT NULL,
+    seasons             TEXT,
+    attempt             INTEGER NOT NULL DEFAULT 0,
+    next_retry_at       TEXT    NOT NULL,
+    created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    origin              TEXT    NOT NULL DEFAULT 'auto',
+    wanted_episode_id   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS show_quality_override (
@@ -420,6 +423,19 @@ def _migrate() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN library_click_jellyfin INTEGER NOT NULL DEFAULT 0")
             log.info("Migration: added users.library_click_jellyfin")
 
+        rq_cols = {r["name"] for r in conn.execute("PRAGMA table_info(retry_queue)")}
+        if "origin" not in rq_cols:
+            conn.execute("ALTER TABLE retry_queue ADD COLUMN origin TEXT NOT NULL DEFAULT 'auto'")
+            log.info("Migration: added retry_queue.origin")
+        if "wanted_episode_id" not in rq_cols:
+            conn.execute("ALTER TABLE retry_queue ADD COLUMN wanted_episode_id INTEGER")
+            log.info("Migration: added retry_queue.wanted_episode_id")
+
+        ms_cols = {r["name"] for r in conn.execute("PRAGMA table_info(monitored_series)")}
+        if "origin" not in ms_cols:
+            conn.execute("ALTER TABLE monitored_series ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'")
+            log.info("Migration: added monitored_series.origin")
+
         conn.commit()
 
 
@@ -612,19 +628,23 @@ def reconcile_wanted_episodes() -> int:
 # ── monitored_series ──────────────────────────────────────────────────────────
 
 def upsert_monitored_series(imdb_id: str, tmdb_id: int | None, title: str,
-                            seasons: list[int], monitor_mode: str = "all") -> None:
+                            seasons: list[int], monitor_mode: str = "all",
+                            origin: str = "manual") -> None:
+    """origin is only set on first insert (manual vs auto-approve); an update
+    never changes it, so a series already tagged 'manual' can't be silently
+    downgraded by a later auto-approve pass over the same title."""
     seasons_str = ",".join(str(s) for s in seasons)
     with _connect() as conn:
         conn.execute(
-            """INSERT INTO monitored_series (imdb_id, tmdb_id, title, seasons, monitor_mode, added_at_date)
-               VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d','now'))
+            """INSERT INTO monitored_series (imdb_id, tmdb_id, title, seasons, monitor_mode, added_at_date, origin)
+               VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d','now'), ?)
                ON CONFLICT(imdb_id) DO UPDATE SET
                  tmdb_id=COALESCE(excluded.tmdb_id, tmdb_id),
                  title=excluded.title,
                  seasons=excluded.seasons,
                  monitor_mode=excluded.monitor_mode,
                  status='active'""",
-            (imdb_id, tmdb_id, title, seasons_str, monitor_mode),
+            (imdb_id, tmdb_id, title, seasons_str, monitor_mode, origin),
         )
         conn.commit()
 
@@ -707,6 +727,12 @@ def get_all_wanted_episodes() -> list[dict]:
             "SELECT * FROM wanted_episodes ORDER BY title, season, episode"
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_wanted_episode(episode_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM wanted_episodes WHERE id=?", (episode_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def mark_episode_status(imdb_id: str, season: int, episode: int, status: str) -> None:
@@ -1319,24 +1345,31 @@ def prune_webhook_events(max_age_hours: int = 24) -> int:
 # ── retry queue ───────────────────────────────────────────────────────────────
 
 def enqueue_retry(imdb_id: str, title: str, media_type: str, seasons: list[int] | None,
-                   attempt: int, delay_seconds: int) -> None:
+                   attempt: int, delay_seconds: int, origin: str = "auto",
+                   wanted_episode_id: int | None = None) -> None:
     if not isinstance(delay_seconds, int) or delay_seconds < 0:
         raise ValueError("delay_seconds must be a non-negative int")
     seasons_str = ",".join(str(s) for s in (seasons or []))
     delay_modifier = f"+{delay_seconds} seconds"
     with _connect() as conn:
         conn.execute(
-            """INSERT INTO retry_queue (imdb_id, title, media_type, seasons, attempt, next_retry_at)
-               VALUES (?, ?, ?, ?, ?, datetime('now', ?))""",
-            (imdb_id, title, media_type, seasons_str or None, attempt, delay_modifier),
+            """INSERT INTO retry_queue
+                 (imdb_id, title, media_type, seasons, attempt, next_retry_at, origin, wanted_episode_id)
+               VALUES (?, ?, ?, ?, ?, datetime('now', ?), ?, ?)""",
+            (imdb_id, title, media_type, seasons_str or None, attempt, delay_modifier,
+             origin, wanted_episode_id),
         )
         conn.commit()
 
 
 def get_due_retries() -> list[dict]:
+    """Due retries, manually-originated requests first, oldest-created first
+    within each group  -  so a user's own add never gets stuck behind a
+    backlog of auto-approve items."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM retry_queue WHERE next_retry_at <= datetime('now') ORDER BY next_retry_at"
+            """SELECT * FROM retry_queue WHERE next_retry_at <= datetime('now')
+               ORDER BY CASE origin WHEN 'manual' THEN 0 ELSE 1 END, created_at"""
         ).fetchall()
         return [dict(r) for r in rows]
 

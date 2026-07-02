@@ -26,6 +26,9 @@ class MediaRequest:
     seasons: list[int] = field(default_factory=list)
     episode: int | None = None
     tmdb_id: int | None = None
+    # "manual" (user/Seerr requested) or "auto" (auto-approve/trending fill).
+    # Used by the retry queue to give manual adds priority over background fill.
+    origin: str = "manual"
 
     @property
     def is_movie(self) -> bool:

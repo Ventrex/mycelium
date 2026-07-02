@@ -2617,7 +2617,8 @@ def _kick_off_processing(title: str, imdb_id: str, media_type: str,
                 monitored = [int(s) for s in seasons if int(s) in all_seasons]
             else:
                 monitored = all_seasons
-            db.upsert_monitored_series(imdb_id, tmdb_id, title, monitored, monitor_mode=monitor_mode)
+            db.upsert_monitored_series(imdb_id, tmdb_id, title, monitored, monitor_mode=monitor_mode,
+                                       origin="manual")
         except Exception as exc:
             log.warning("upsert_monitored_series failed: %s", exc)
             monitored = seasons or [1]

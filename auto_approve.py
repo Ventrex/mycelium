@@ -158,7 +158,7 @@ def _queue_movie(item: dict, seen: set[str], media_bl: set[int] | None = None,
     seen.add(imdb_id)
     try:
         ok = processor.process(MediaRequest(title=title, media_type="movie", imdb_id=imdb_id,
-                                              seasons=[], tmdb_id=tmdb_id))
+                                              seasons=[], tmdb_id=tmdb_id, origin="auto"))
     except Exception as exc:
         log.warning("Auto-approve: processor failed for %s: %s", title, exc)
         ok = False
@@ -178,7 +178,7 @@ def _queue_series(item: dict, seen: set[str]) -> bool:
     seasons = list(range(1, (show.get("number_of_seasons") or 1) + 1))
     log.info("Auto-approve: monitoring series %s (%s, %d seasons)", title, imdb_id, len(seasons))
     try:
-        db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons)
+        db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons, origin="auto")
         seen.add(imdb_id)
         return True
     except Exception as exc:

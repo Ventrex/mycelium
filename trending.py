@@ -40,7 +40,7 @@ def _queue_movie(item: dict, source: str, seen: set[str]) -> bool:
         return False
     log.info("Auto-add (%s): queueing movie %s (%s, rating=%s)",
              source, title, imdb_id, item.get("rating"))
-    req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[])
+    req = MediaRequest(title=title, media_type="movie", imdb_id=imdb_id, seasons=[], origin="auto")
     try:
         processor.process(req)
         seen.add(imdb_id)
@@ -64,7 +64,7 @@ def _queue_series(item: dict, source: str, seen_series: set[str]) -> bool:
     log.info("Auto-add (%s): monitoring series %s (%s, %d seasons)",
              source, title, imdb_id, n_seasons)
     try:
-        db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons)
+        db.upsert_monitored_series(imdb_id, tmdb_id, title, seasons, origin="auto")
         seen_series.add(imdb_id)
         return True
     except Exception as exc:
